@@ -33,7 +33,7 @@ const skinTypes = [
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, refreshProfile } = useAuth();
   const [step, setStep] = useState(0);
   const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(null);
@@ -57,15 +57,10 @@ export default function Onboarding() {
         }).eq("id", user.id);
         await refreshProfile();
       }
-      localStorage.setItem("onboarded", "true");
-      localStorage.setItem("skinGoal", goal);
-      localStorage.setItem("skinType", type);
       navigate("/dashboard");
     } catch (e) {
       console.error("Onboarding save:", e);
-      localStorage.setItem("onboarded", "true");
-      localStorage.setItem("skinGoal", goal);
-      localStorage.setItem("skinType", type);
+      // Still navigate to dashboard even if backend fails
       navigate("/dashboard");
     } finally {
       setSaving(false);
@@ -93,7 +88,7 @@ export default function Onboarding() {
               Welcome to Clear<span className="text-primary">Day</span>
             </h1>
             <p className="text-base sm:text-lg text-muted-foreground">
-              Build consistent skincare habits, track your progress, and see real results — one day at a time.
+              Build consistent skincare habits, track your progress, and see real results one day at a time.
             </p>
           </motion.div>
           

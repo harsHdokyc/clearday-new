@@ -228,7 +228,7 @@ export default function Dashboard() {
               <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                 <div>
                   <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-bold text-foreground mb-1 sm:mb-2">
-                    Good morning, <span className="text-primary">let's glow</span>
+                    Hi <span className="text-primary">{user?.name || 'User'}</span>, let's glow
                   </h1>
                   <p className="text-sm sm:text-base text-muted-foreground">
                     You're building something beautiful, one day at a time.
@@ -277,7 +277,7 @@ export default function Dashboard() {
               <InsightCard
                 title="Product Fit"
                 type="neutral"
-                message="Evaluate products in the Products page — we’ll match them to your skin type and goals."
+                message="Evaluate products in the Products page. we’ll match them to your skin type and goals."
               />
             </div>
 

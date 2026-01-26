@@ -21,12 +21,22 @@ const Index = () => {
     { label: "Skin Clarity", value: 24, trend: "up" as const, isGood: true },
   ]);
 
+  const [savedRoutineSteps] = useState<string[]>([
+    "Cleanse",
+    "Moisturize",
+    "Sunscreen"
+  ]);
+
   const handlePhotoUpload = () => {
     console.log("Photo uploaded");
   };
 
   const handleRoutineComplete = (steps: any[]) => {
     console.log("Routine updated:", steps);
+  };
+
+  const handleRoutineSave = (steps: string[]) => {
+    console.log("Routine saved:", steps);
   };
 
   return (
@@ -81,7 +91,7 @@ const Index = () => {
         {/* AI Insight */}
         <InsightCard
           type="positive"
-          message="Inflammation reduced by 7% over 4 days. Your current routine is working — keep it consistent."
+          message="Inflammation reduced by 7% over 4 days. Your current routine is working. keep it consistent."
         />
 
         {/* Two Column Layout on larger screens */}
@@ -91,6 +101,8 @@ const Index = () => {
             hasCheckedInToday={false}
             onPhotoUpload={handlePhotoUpload}
             onRoutineComplete={handleRoutineComplete}
+            onRoutineSave={handleRoutineSave}
+            savedRoutineSteps={savedRoutineSteps}
           />
 
           {/* Progress Card */}
@@ -104,7 +116,7 @@ const Index = () => {
         <InsightCard
           title="Product Fit"
           type="neutral"
-          message="The Niacinamide serum is effective for acne reduction. 21% of similar users reported dryness after week two — consider adding a hydrating layer."
+          message="The Niacinamide serum is effective for acne reduction. 21% of similar users reported dryness after week two. Consider adding a hydrating layer."
         />
 
         {/* Motivational Footer */}

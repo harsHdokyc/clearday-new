@@ -321,7 +321,7 @@ export default function Landing() {
             </h2>
             <p className="text-base sm:text-lg text-muted-foreground mb-6 sm:mb-8 max-w-xl mx-auto px-4">
               Join thousands who are building better skincare habits with ClearDay. 
-              Start your journey today — it's free.
+              Start your journey today, it's free.
             </p>
             <Button 
               size="lg" 
