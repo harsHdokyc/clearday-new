@@ -5,8 +5,12 @@
  * - Reset when 4+ days missed: baseline_date=null, last_reset_at=now()
  */
 
-import { supabase } from './supabase';
+import { supabase, supabaseAdmin } from './supabase';
 import { subDays, differenceInDays, format, parseISO } from 'date-fns';
+
+const CHECK_IN_BUCKET = 'check-in-photos';
+const STORAGE_PAGE_SIZE = 1000;
+const STORAGE_DELETE_CHUNK_SIZE = 100;
 
 export type StreakData = {
   currentStreak: number;
@@ -23,19 +27,80 @@ function toDate(s: string): Date {
   return typeof s === 'string' && s.includes('T') ? parseISO(s) : new Date(s);
 }
 
-/** Get sorted unique check-in dates (YYYY-MM-DD) for user, optionally after baseline */
-async function getCheckInDates(userId: string, afterBaseline: string | null): Promise<string[]> {
-  let q = supabase
+async function deleteUserCheckInPhotos(userId: string) {
+  try {
+    const userPaths = await listAllUserCheckInFiles(userId);
+    if (!userPaths.length) {
+      return;
+    }
+
+    for (let index = 0; index < userPaths.length; index += STORAGE_DELETE_CHUNK_SIZE) {
+      const chunk = userPaths.slice(index, index + STORAGE_DELETE_CHUNK_SIZE);
+      const { error } = await supabaseAdmin.storage.from(CHECK_IN_BUCKET).remove(chunk);
+      if (error) {
+        console.error('Error removing check-in photo chunk during reset:', error);
+      }
+    }
+  } catch (error) {
+    console.error('Error clearing check-in photos during reset:', error);
+  }
+}
+
+async function listAllUserCheckInFiles(prefix: string): Promise<string[]> {
+  let files: string[] = [];
+  let page = 0;
+
+  while (true) {
+    const { data, error } = await supabaseAdmin.storage
+      .from(CHECK_IN_BUCKET)
+      .list(prefix, { limit: STORAGE_PAGE_SIZE, offset: page * STORAGE_PAGE_SIZE });
+
+    if (error) {
+      console.error('Error listing storage objects during reset:', error);
+      break;
+    }
+
+    if (!data || data.length === 0) {
+      break;
+    }
+
+    for (const entry of data) {
+      const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+
+      if (entry.metadata) {
+        files.push(fullPath);
+      } else {
+        const nested = await listAllUserCheckInFiles(fullPath);
+        files = files.concat(nested);
+      }
+    }
+
+    if (data.length < STORAGE_PAGE_SIZE) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return files;
+}
+
+/** Get all unique check-in dates for user */
+async function getCheckInDates(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
     .from('check_ins')
     .select('check_in_date')
     .eq('user_id', userId)
     .order('check_in_date', { ascending: true });
-  if (afterBaseline) q = q.gte('check_in_date', afterBaseline);
-  const { data, error } = await q;
+  
   if (error) return [];
-  const set = new Set<string>();
-  (data || []).forEach((r: { check_in_date: string }) => set.add(String(r.check_in_date).slice(0, 10)));
-  return Array.from(set).sort();
+  
+  const uniqueDates = new Set<string>();
+  (data || []).forEach((r: { check_in_date: string }) => {
+    uniqueDates.add(String(r.check_in_date).slice(0, 10));
+  });
+  
+  return Array.from(uniqueDates).sort();
 }
 
 /** Compute longest consecutive streak from a sorted list of dates */
@@ -66,31 +131,30 @@ export async function getStreakData(userId: string): Promise<StreakData> {
   const today = new Date();
   const todayStr = format(today, 'yyyy-MM-dd');
 
-  // 1) Profile: baseline_date, last_reset_at
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('baseline_date, last_reset_at')
-    .eq('id', userId)
-    .maybeSingle();
-  let baseline: string | null = profile?.baseline_date ? String(profile.baseline_date).slice(0, 10) : null;
-
-  // 2) All check-in dates (respecting baseline if set)
-  const dates = await getCheckInDates(userId, baseline);
-
+  // Get all check-in dates for user
+  const dates = await getCheckInDates(userId);
+  
   const totalDays = dates.length;
   const hasToday = dates.includes(todayStr);
-  const lastDate = dates.length ? dates[dates.length - 1]! : null;
+  const lastDate = dates.length ? dates[dates.length - 1] : null;
 
-  // 3) Days missed (from last check-in to yesterday)
+  // Calculate days missed (from last check-in to yesterday)
   const daysMissed = lastDate ? consecutiveMissed(lastDate, today) : 0;
 
-  // 4) Should reset? (4+ missed). alreadyApplied = we've run applyReset for this gap
+  // Get profile for reset tracking
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('last_reset_at')
+    .eq('id', userId)
+    .maybeSingle();
+
+  // Reset logic: trigger if 4+ days missed and not already reset for this gap
   const shouldReset = daysMissed >= 4;
-  const lastReset = profile?.last_reset_at ? new Date(String(profile.last_reset_at)).getTime() : 0;
+  const lastReset = profile?.last_reset_at ? new Date(profile.last_reset_at).getTime() : 0;
   const lastCheckIn = lastDate ? new Date(lastDate).getTime() : 0;
   const resetApplied = shouldReset && lastReset >= lastCheckIn;
 
-  // 5) Current streak: from today backwards, count consecutive days with check-in
+  // Calculate current streak
   let currentStreak = 0;
   if (hasToday) {
     currentStreak = 1;
@@ -104,7 +168,6 @@ export async function getStreakData(userId: string): Promise<StreakData> {
     }
   }
 
-  // 6) Longest streak (within current baseline window)
   const longestStreak = longestConsecutive(dates);
 
   return {
@@ -118,21 +181,21 @@ export async function getStreakData(userId: string): Promise<StreakData> {
   };
 }
 
-/** Apply reset (4+ days missed): set baseline_date=null, last_reset_at=now() */
+/** Apply reset: clear all user data when 4+ days missed */
 export async function applyReset(userId: string): Promise<void> {
+  const timestamp = new Date().toISOString();
+  
+  // Mark reset in profile
   await supabase
     .from('profiles')
-    .update({ baseline_date: null, last_reset_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update({ last_reset_at: timestamp, updated_at: timestamp })
     .eq('id', userId);
+
+  // Delete all user data using admin client
+  await supabaseAdmin.from('check_ins').delete().eq('user_id', userId);
+  await supabaseAdmin.from('product_evaluations').delete().eq('user_id', userId);
+  
+  // Delete stored photos
+  await deleteUserCheckInPhotos(userId);
 }
 
-/** Set baseline to today when it's null (first check-in after reset or ever) */
-export async function ensureBaseline(userId: string, checkInDate: string): Promise<void> {
-  const { data } = await supabase.from('profiles').select('baseline_date').eq('id', userId).maybeSingle();
-  if (data?.baseline_date == null) {
-    await supabase
-      .from('profiles')
-      .update({ baseline_date: checkInDate, updated_at: new Date().toISOString() })
-      .eq('id', userId);
-  }
-}

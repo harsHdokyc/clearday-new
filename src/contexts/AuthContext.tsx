@@ -207,6 +207,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: error.message };
       }
 
+      if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        return {
+          success: false,
+          error: "An account with this email already exists. Please sign in.",
+        };
+      }
+
       // Check if email confirmation is required
       // If user is null or email is not confirmed, verification is needed
       if (!data.user || !data.session) {

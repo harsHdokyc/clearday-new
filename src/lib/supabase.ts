@@ -15,3 +15,16 @@ export const supabase = createClient(supabaseUrl || 'https://placeholder.supabas
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
   },
 });
+
+// Service role client for admin operations (bypasses RLS)
+// Note: This should only be used on the server side or for trusted admin operations
+export const supabaseAdmin = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey || 'dummy',
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  }
+);
