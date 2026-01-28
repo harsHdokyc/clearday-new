@@ -32,8 +32,7 @@ export default function SignUp() {
           navigate(`/verify-email?email=${encodeURIComponent(email)}`);
         } else {
           // Email confirmation not required, proceed to onboarding
-          const isOnboarded = localStorage.getItem("onboarded");
-          navigate(isOnboarded ? "/dashboard" : "/onboarding");
+          navigate("/onboarding");
         }
       } else {
         setError(result.error || "Failed to create account");

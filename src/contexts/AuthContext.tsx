@@ -105,7 +105,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setUser(null);
         setProfile(null);
-        localStorage.removeItem("onboarded");
       }
     });
 
@@ -140,7 +139,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (p) {
         if (p.name) setUser((u) => (u ? { ...u, name: p!.name! } : u));
         setProfile({ skin_goal: p.skin_goal ?? null, skin_type: p.skin_type ?? null });
-        if (p.skin_goal || p.skin_type) localStorage.setItem('onboarded', 'true');
       }
     } catch {
       // timeouts or missing table: keep user, leave profile null
@@ -311,7 +309,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await supabase.auth.signOut();
       setUser(null);
       setProfile(null);
-      localStorage.removeItem("onboarded");
     } catch (error) {
       console.error("Error logging out:", error);
     }
@@ -321,7 +318,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const u = user;
     if (!u?.id) return;
     const { data } = await supabase.from('profiles').select('skin_goal, skin_type').eq('id', u.id).maybeSingle();
-    if (data) setProfile({ skin_goal: data.skin_goal ?? null, skin_type: data.skin_type ?? null });
+    if (data) {
+      setProfile({ skin_goal: data.skin_goal ?? null, skin_type: data.skin_type ?? null });
+    }
   };
 
   return (

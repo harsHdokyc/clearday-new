@@ -34,8 +34,7 @@ export default function Login() {
       if (result.success) {
         // Small delay to ensure state updates
         await new Promise(resolve => setTimeout(resolve, 100));
-        const isOnboarded = localStorage.getItem("onboarded");
-        navigate(isOnboarded ? "/dashboard" : "/onboarding");
+        navigate("/dashboard");
       } else {
         setError(result.error || "Invalid credentials");
       }

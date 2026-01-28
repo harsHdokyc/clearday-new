@@ -35,8 +35,7 @@ export default function EmailVerification() {
       if (result.success) {
         setIsVerified(true);
         setTimeout(() => {
-          const isOnboarded = localStorage.getItem("onboarded");
-          navigate(isOnboarded ? "/dashboard" : "/onboarding");
+          navigate("/onboarding");
         }, 2000);
       } else {
         setError(result.error || "Invalid OTP code. Please try again.");

@@ -138,8 +138,8 @@ export default function Products() {
     setIsSearching(true);
     setError("");
     setEvaluation(null);
-    const skinType = profile?.skin_type || localStorage.getItem("skinType") || undefined;
-    const skinGoal = profile?.skin_goal || localStorage.getItem("skinGoal");
+    const skinType = profile?.skin_type || undefined;
+    const skinGoal = profile?.skin_goal;
     const goals = skinGoal ? [skinGoal] : undefined;
     const displayName = extractProductName(productUrl);
     

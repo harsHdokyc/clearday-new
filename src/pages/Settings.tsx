@@ -35,7 +35,7 @@ const settingGroups = [
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { logout, user } = useAuth();
+  const { logout, user, profile } = useAuth();
   const { theme, setTheme } = useTheme();
   const { settings: notificationSettings, updateSettings, requestPermission, permission } = useNotifications();
 
@@ -103,9 +103,9 @@ export default function Settings() {
               {user?.email || "demo@email.com"}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">
-              Goal: <span className="text-foreground capitalize">{localStorage.getItem("skinGoal") || "Not set"}</span>
+              Goal: <span className="text-foreground capitalize">{profile?.skin_goal || "Not set"}</span>
               {" • "}
-              Type: <span className="text-foreground capitalize">{localStorage.getItem("skinType") || "Not set"}</span>
+              Type: <span className="text-foreground capitalize">{profile?.skin_type || "Not set"}</span>
             </p>
           </div>
           <Button variant="outline" size="sm" className="hidden sm:flex">Edit</Button>

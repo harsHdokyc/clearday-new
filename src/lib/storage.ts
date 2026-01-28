@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import { ensureBaseline } from './streaks';
 
 const BUCKET_NAME = 'check-in-photos';
 
@@ -69,7 +68,6 @@ export const saveCheckIn = async (
       onConflict: 'user_id,check_in_date',
     });
     if (error) throw error;
-    await ensureBaseline(userId, checkInDate);
   } catch (error) {
     console.error('Error saving check-in:', error);
     throw new Error('Failed to save check-in');
@@ -92,7 +90,6 @@ export const updateCheckInRoutine = async (userId: string, completed: boolean): 
       { onConflict: 'user_id,check_in_date' }
     );
     if (error) throw error;
-    await ensureBaseline(userId, checkInDate);
   } catch (error) {
     console.error('Error updating routine:', error);
     throw new Error('Failed to update routine');

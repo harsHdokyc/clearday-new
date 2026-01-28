@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export function AppLayout() {
   const isMobile = useIsMobile();
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, profile } = useAuth();
 
   if (isLoading) {
     return (
@@ -20,7 +20,8 @@ export function AppLayout() {
     return <Navigate to="/login" replace />;
   }
 
-  if (!localStorage.getItem("onboarded")) {
+  // Check if user has completed onboarding (profile exists)
+  if (!profile) {
     return <Navigate to="/onboarding" replace />;
   }
 
