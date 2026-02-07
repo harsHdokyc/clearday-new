@@ -93,6 +93,29 @@ export function CheckInCard({
     reader.readAsDataURL(file);
   };
 
+  const handleCameraCapture = (viewType: "front" | "right" | "left") => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.capture = 'environment'; // Use rear camera by default
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        handlePhotoSelect(viewType, file);
+      }
+    };
+    input.click();
+  };
+
+  const showPhotoOptions = (viewType: "front" | "right" | "left") => {
+    const useCamera = window.confirm('Use camera to take a photo?\n\nOK = Camera\nCancel = Choose from gallery');
+    if (useCamera) {
+      handleCameraCapture(viewType);
+    } else {
+      fileInputRefs[viewType].current?.click();
+    }
+  };
+
   const handleRemovePhoto = (viewType: "front" | "right" | "left") => {
     // Only allow removal if photo hasn't been uploaded yet
     if (photos[viewType].isUploaded) return;
@@ -210,7 +233,7 @@ export function CheckInCard({
                   type="button"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => fileInputRefs[viewType].current?.click()}
+                  onClick={() => showPhotoOptions(viewType)}
                   className={cn(
                     "w-full aspect-square rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1.5",
                     "border-border hover:border-primary/50 hover:bg-primary/5"
