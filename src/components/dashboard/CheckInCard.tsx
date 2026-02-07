@@ -11,6 +11,17 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface PhotoState {
   file: File | null;
@@ -58,7 +69,7 @@ export function CheckInCard({
     }));
   }, [existingPhotos?.front, existingPhotos?.right, existingPhotos?.left]);
 
-  const [routineSteps, setRoutineSteps] = useState<{ label: string; completed: boolean }[]>([]);
+  const [routineSteps, setRoutineSteps] = useState<{ label: string; completed: boolean; completedAt?: number }[]>([]);
   const [isRoutineLoading, setIsRoutineLoading] = useState(true);
   
   useEffect(() => {
@@ -75,6 +86,8 @@ export function CheckInCard({
   const [routineDialogOpen, setRoutineDialogOpen] = useState(false);
   const [editingSteps, setEditingSteps] = useState<string[]>([]);
   const [newStepLabel, setNewStepLabel] = useState("");
+  const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
+  const [selectedPhotoType, setSelectedPhotoType] = useState<"front" | "right" | "left" | null>(null);
   const fileInputRefs = {
     front: useRef<HTMLInputElement>(null),
     right: useRef<HTMLInputElement>(null),
@@ -108,11 +121,23 @@ export function CheckInCard({
   };
 
   const showPhotoOptions = (viewType: "front" | "right" | "left") => {
-    const useCamera = window.confirm('Use camera to take a photo?\n\nOK = Camera\nCancel = Choose from gallery');
-    if (useCamera) {
-      handleCameraCapture(viewType);
-    } else {
-      fileInputRefs[viewType].current?.click();
+    setSelectedPhotoType(viewType);
+    setPhotoDialogOpen(true);
+  };
+
+  const handleCameraSelect = () => {
+    if (selectedPhotoType) {
+      handleCameraCapture(selectedPhotoType);
+      setPhotoDialogOpen(false);
+      setSelectedPhotoType(null);
+    }
+  };
+
+  const handleGallerySelect = () => {
+    if (selectedPhotoType) {
+      fileInputRefs[selectedPhotoType].current?.click();
+      setPhotoDialogOpen(false);
+      setSelectedPhotoType(null);
     }
   };
 
@@ -139,9 +164,25 @@ export function CheckInCard({
   const hasPendingPhotos = Object.values(photos).some((p) => p.file !== null);
 
   const toggleRoutineStep = (label: string) => {
-    const next = routineSteps.map((s) =>
-      s.label === label ? { ...s, completed: !s.completed } : s
-    );
+    const now = Date.now();
+    const next = routineSteps.map((s) => {
+      if (s.label === label) {
+        if (s.completed) {
+          // Check if within 10-second window
+          const timeSinceCompletion = s.completedAt ? now - s.completedAt : Infinity;
+          if (timeSinceCompletion > 10000) {
+            // Don't allow deselect after 10 seconds
+            return s;
+          }
+          // Allow deselect within 10 seconds
+          return { ...s, completed: false, completedAt: undefined };
+        } else {
+          // Allow checking
+          return { ...s, completed: true, completedAt: now };
+        }
+      }
+      return s;
+    });
     setRoutineSteps(next);
     onRoutineComplete(next);
   };
@@ -284,7 +325,13 @@ export function CheckInCard({
         ) : (
           <>
             <div className="space-y-1.5">
-              {routineSteps.map((step) => (
+              {routineSteps.map((step) => {
+                const now = Date.now();
+                const timeSinceCompletion = step.completedAt ? now - step.completedAt : 0;
+                const canDeselect = step.completed && timeSinceCompletion <= 10000;
+                const isLocked = step.completed && timeSinceCompletion > 10000;
+                
+                return (
                 <motion.button
                   key={step.label}
                   type="button"
@@ -293,8 +340,10 @@ export function CheckInCard({
                   onClick={() => toggleRoutineStep(step.label)}
                   className={cn(
                     "w-full flex items-center gap-3 p-3 rounded-lg transition-all text-left",
-                    step.completed ? "bg-success/10" : "bg-muted/50 hover:bg-muted"
+                    step.completed ? "bg-success/10" : "bg-muted/50 hover:bg-muted",
+                    isLocked && "cursor-not-allowed opacity-75"
                   )}
+                  title={isLocked ? "Locked: Cannot deselect after 10 seconds" : ""}
                 >
                   <div
                     className={cn(
@@ -304,11 +353,16 @@ export function CheckInCard({
                   >
                     {step.completed ? <Check size={16} /> : null}
                   </div>
-                  <span className={cn("text-sm font-medium", step.completed ? "text-success" : "text-foreground")}>
-                    {step.label}
-                  </span>
+                  <div className="flex-1">
+                    <span className={cn("text-sm font-medium", step.completed ? "text-success" : "text-foreground")}>
+                      {step.label}
+                    </span>
+                    {isLocked && (
+                      <div className="text-xs text-muted-foreground mt-0.5">Locked</div>
+                    )}
+                  </div>
                 </motion.button>
-              ))}
+              )})}
             </div>
             <Button
               variant="ghost"
@@ -375,6 +429,26 @@ export function CheckInCard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Photo selection alert dialog */}
+      <AlertDialog open={photoDialogOpen} onOpenChange={setPhotoDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Choose Photo Source</AlertDialogTitle>
+            <AlertDialogDescription>
+              How would you like to add your {selectedPhotoType} photo?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleGallerySelect}>
+              Choose from Gallery
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleCameraSelect}>
+              Use Camera
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 }
