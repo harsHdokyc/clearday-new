@@ -297,3 +297,126 @@ export const saveProfileRoutine = async (userId: string, steps: string[]): Promi
       });
   }
 };
+
+// Notification functions
+export interface Notification {
+  id: string;
+  user_id: string;
+  title: string;
+  message: string;
+  type: 'reminder' | 'achievement' | 'progress' | 'system';
+  read: boolean;
+  created_at: string;
+  updated_at: string;
+  metadata?: Record<string, any>;
+}
+
+export const createNotification = async (
+  userId: string,
+  title: string,
+  message: string,
+  type: 'reminder' | 'achievement' | 'progress' | 'system',
+  metadata?: Record<string, any>
+): Promise<Notification> => {
+  const { data, error } = await supabase
+    .from('notifications')
+    .insert({
+      user_id: userId,
+      title,
+      message,
+      type,
+      metadata: metadata || {}
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data;
+};
+
+export const getNotifications = async (userId: string): Promise<Notification[]> => {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+};
+
+export const markNotificationAsRead = async (notificationId: string): Promise<void> => {
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read: true, updated_at: new Date().toISOString() })
+    .eq('id', notificationId);
+
+  if (error) throw error;
+};
+
+export const markAllNotificationsAsRead = async (userId: string): Promise<void> => {
+  const { error } = await supabase
+    .from('notifications')
+    .update({ read: true, updated_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .eq('read', false);
+
+  if (error) throw error;
+};
+
+export const deleteNotification = async (notificationId: string): Promise<void> => {
+  const { error } = await supabase
+    .from('notifications')
+    .delete()
+    .eq('id', notificationId);
+
+  if (error) throw error;
+};
+
+export const clearAllNotifications = async (userId: string): Promise<void> => {
+  const { error } = await supabase
+    .from('notifications')
+    .delete()
+    .eq('user_id', userId);
+
+  if (error) throw error;
+};
+
+// Helper functions to create specific notification types
+export const createStreakMilestoneNotification = async (
+  userId: string,
+  streak: number
+): Promise<void> => {
+  await createNotification(
+    userId,
+    "Streak Milestone",
+    `You're on a ${streak}-day streak! Keep it up!`,
+    'achievement',
+    { streak }
+  );
+};
+
+export const createProgressNotification = async (
+  userId: string,
+  metric: string,
+  improvement: number
+): Promise<void> => {
+  await createNotification(
+    userId,
+    "Progress Update",
+    `Your ${metric.toLowerCase()} has improved by ${improvement}%`,
+    'progress',
+    { metric, improvement }
+  );
+};
+
+export const createDailyReminderNotification = async (
+  userId: string
+): Promise<void> => {
+  await createNotification(
+    userId,
+    "Daily Reminder",
+    "Time for your evening skincare routine!",
+    'reminder'
+  );
+};

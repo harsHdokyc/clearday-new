@@ -1,12 +1,18 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, FlaskConical, Sparkles, Check, AlertTriangle, Info } from "lucide-react";
+import { Search, FlaskConical, Sparkles, Check, AlertTriangle, Info, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { evaluateProduct } from "@/lib/ai";
 import { useAuth } from "@/contexts/AuthContext";
 import { saveProductEvaluation, getUserProductEvaluations } from "@/lib/storage";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface ProductEvaluation {
   name: string;
@@ -15,6 +21,11 @@ interface ProductEvaluation {
   insights: string[];
   similarUserFeedback: string;
   ingredients: { name: string; benefit: string; concern?: string }[];
+}
+
+interface RecentProduct extends ProductEvaluation {
+  id: string;
+  created_at: string;
 }
 
 // Mock product evaluations
@@ -86,16 +97,30 @@ export default function Products() {
   const [evaluation, setEvaluation] = useState<ProductEvaluation | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState("");
-  const [recentProducts, setRecentProducts] = useState<{ name: string; score: number; verdict: "great" | "good" | "caution" }[]>([]);
+  const [recentProducts, setRecentProducts] = useState<RecentProduct[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<RecentProduct | null>(null);
+  const [productModalOpen, setProductModalOpen] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
     getUserProductEvaluations(user.id, 10).then((rows) => {
       setRecentProducts(
-        (rows as { product_name: string; fit_score: number; verdict: string }[]).map((r) => ({
+        (rows as { 
+          id: string;
+          product_name: string; 
+          fit_score: number; 
+          verdict: string; 
+          insight_message?: string;
+          created_at: string;
+        }[]).map((r) => ({
+          id: r.id,
           name: r.product_name,
-          score: r.fit_score,
+          fitScore: r.fit_score,
           verdict: r.verdict as "great" | "good" | "caution",
+          insights: r.insight_message ? [r.insight_message] : ["Product evaluation available"],
+          similarUserFeedback: r.insight_message || "Based on your skin profile analysis",
+          ingredients: [],
+          created_at: r.created_at,
         }))
       );
     });
@@ -103,33 +128,158 @@ export default function Products() {
 
   const extractProductName = (url: string): string => {
     try {
-      // Try to extract product name from common URL patterns
       const urlLower = url.toLowerCase();
       
       // Check if it's a URL
       if (urlLower.includes('http') || urlLower.includes('www.')) {
         // Extract from Amazon URLs
         if (urlLower.includes('amazon')) {
-          const match = url.match(/\/([^\/]+)\/dp\//i) || url.match(/[?&]k=([^&]+)/i);
-          if (match) {
-            return decodeURIComponent(match[1].replace(/[+-]/g, ' '));
+          // Try multiple Amazon patterns
+          const patterns = [
+            /\/dp\/([^\/?]+)/i,
+            /\/gp\/product\/([^\/?]+)/i,
+            /[?&]k=([^&]+)/i,
+            /\/([^\/]+)\/dp\//i
+          ];
+          for (const pattern of patterns) {
+            const match = url.match(pattern);
+            if (match && match[1]) {
+              let name = decodeURIComponent(match[1].replace(/[+-]/g, ' '));
+              // Clean up common Amazon URL artifacts
+              name = name.replace(/[^a-zA-Z0-9\s\-]/g, '').trim();
+              if (name.length > 5) return name;
+            }
           }
         }
         
-        // Extract from other URLs - get the last meaningful part
-        const parts = url.split('/').filter(p => p.length > 0);
-        for (let i = parts.length - 1; i >= 0; i--) {
-          const part = parts[i];
-          if (!part.includes('?') && !part.includes('www.') && !part.includes('http') && part.length > 3) {
-            return decodeURIComponent(part.replace(/[-_]/g, ' '));
+        // Extract from Sephora URLs
+        if (urlLower.includes('sephora')) {
+          const match = url.match(/\/product\/([^\/?]+)/i) || url.match(/\/([^\/]+)-P\d+/i);
+          if (match && match[1]) {
+            let name = decodeURIComponent(match[1].replace(/[-_]/g, ' '));
+            name = name.replace(/[^a-zA-Z0-9\s\-]/g, '').trim();
+            if (name.length > 5) return name;
+          }
+        }
+        
+        // Extract from Ulta URLs
+        if (urlLower.includes('ulta')) {
+          const match = url.match(/\/product\/([^\/?]+)/i) || url.match(/\/([^\/?]+)\?/i);
+          if (match && match[1]) {
+            let name = decodeURIComponent(match[1].replace(/[-_]/g, ' '));
+            name = name.replace(/[^a-zA-Z0-9\s\-]/g, '').trim();
+            if (name.length > 5) return name;
+          }
+        }
+        
+        // Extract from general e-commerce URLs
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname;
+        const pathParts = pathname.split('/').filter(p => p.length > 0);
+        
+        // Try to find product-like parts (usually contain keywords)
+        const productKeywords = ['product', 'item', 'p', 'sku', 'model'];
+        let productPart = null;
+        
+        // Look for parts with product keywords
+        for (let i = pathParts.length - 1; i >= 0; i--) {
+          const part = pathParts[i];
+          if (productKeywords.some(keyword => part.toLowerCase().includes(keyword))) {
+            // Get the next part which might be the product name
+            if (i + 1 < pathParts.length) {
+              productPart = pathParts[i + 1];
+              break;
+            }
+          }
+        }
+        
+        // If no product keyword found, try the last meaningful part
+        if (!productPart) {
+          for (let i = pathParts.length - 1; i >= 0; i--) {
+            const part = pathParts[i];
+            // Skip common non-product parts
+            if (!part.match(/^(www|http|https|com|org|net|edu|gov)$/i) && 
+                part.length > 3 && 
+                !part.includes('?') && 
+                !part.includes('#') &&
+                !part.match(/^\d+$/)) { // Skip pure numbers
+              productPart = part;
+              break;
+            }
+          }
+        }
+        
+        if (productPart) {
+          let name = decodeURIComponent(productPart.replace(/[-_]/g, ' '));
+          // Clean up the name
+          name = name.replace(/[^a-zA-Z0-9\s\-]/g, ' ').trim();
+          name = name.replace(/\s+/g, ' ');
+          
+          // Capitalize words
+          name = name.split(' ').map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+          ).join(' ');
+          
+          // Smart truncation for long names - try to keep key product info
+          if (name.length > 80) {
+            // Split by words and try to keep the most important ones
+            const words = name.split(' ');
+            const keyWords = ['spf', 'sunscreen', 'serum', 'cream', 'moisturizer', 'cleanser', 'toner', 'mask', 'oil'];
+            
+            // Try to find a good cutoff point
+            let cutoffIndex = Math.floor(words.length * 0.6); // Default to 60% of words
+            for (let i = 0; i < words.length; i++) {
+              if (keyWords.includes(words[i].toLowerCase()) && i > 3) {
+                cutoffIndex = i + 1; // Include this keyword
+                break;
+              }
+            }
+            
+            name = words.slice(0, cutoffIndex).join(' ') + '...';
+          }
+          
+          if (name.length > 5) return name;
+        }
+        
+        // Fallback: try to get from URL parameters
+        const searchParams = urlObj.searchParams;
+        for (const [key, value] of searchParams) {
+          if (key.toLowerCase().includes('product') || 
+              key.toLowerCase().includes('item') || 
+              key.toLowerCase().includes('name') ||
+              key.toLowerCase().includes('q') ||
+              key.toLowerCase().includes('search')) {
+            let name = decodeURIComponent(value.replace(/[-_]/g, ' '));
+            name = name.replace(/[^a-zA-Z0-9\s\-]/g, ' ').trim();
+            if (name.length > 5) return name;
           }
         }
       }
       
-      // If not a URL or couldn't extract, return as-is (truncated if too long)
-      return url.length > 50 ? url.substring(0, 47) + '...' : url;
-    } catch {
-      return url.length > 50 ? url.substring(0, 47) + '...' : url;
+      // If not a URL or couldn't extract, try to clean up the input
+      let cleaned = url.replace(/https?:\/\/(www\.)?/i, '');
+      cleaned = cleaned.split('/')[0];
+      cleaned = cleaned.split('?')[0];
+      cleaned = cleaned.replace(/[-_]/g, ' ');
+      cleaned = cleaned.replace(/[^a-zA-Z0-9\s]/g, ' ').trim();
+      cleaned = cleaned.replace(/\s+/g, ' ');
+      
+      // Capitalize first letter
+      if (cleaned.length > 0) {
+        cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
+      }
+      
+      // Smart truncation for fallback
+      if (cleaned.length > 80) {
+        const words = cleaned.split(' ');
+        cleaned = words.slice(0, Math.floor(words.length * 0.6)).join(' ') + '...';
+      }
+      
+      return cleaned || 'Unknown Product';
+    } catch (error) {
+      console.error('Error extracting product name:', error);
+      let fallback = url.length > 80 ? url.substring(0, 77) + '...' : url;
+      return fallback || 'Unknown Product';
     }
   };
 
@@ -160,7 +310,16 @@ export default function Products() {
         verdict: result.verdict,
         insightMessage: result.recommendation,
       });
-      setRecentProducts((prev) => [{ name: displayName, score: result.fitScore, verdict: result.verdict }, ...prev.slice(0, 9)]);
+      setRecentProducts((prev) => [{ 
+        id: Date.now().toString(), // temporary ID
+        name: displayName, 
+        fitScore: result.fitScore, 
+        verdict: result.verdict,
+        insights: result.insights.length > 0 ? result.insights : ["Evaluation generated. Consider patch testing before full use."],
+        similarUserFeedback: result.recommendation,
+        ingredients: [],
+        created_at: new Date().toISOString(),
+      }, ...prev.slice(0, 9)]);
     } catch (err: any) {
       console.error("Product evaluation error:", err);
       
@@ -264,6 +423,11 @@ export default function Products() {
       insights: skinBased.insights,
       recommendation: goalBased ? `${skinBased.recommendation}. ${goalBased}.` : skinBased.recommendation
     };
+  };
+
+  const handleProductClick = (product: RecentProduct) => {
+    setSelectedProduct(product);
+    setProductModalOpen(true);
   };
 
   const getVerdictColor = (verdict: string) => {
@@ -532,13 +696,14 @@ export default function Products() {
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.3 + i * 0.1 }}
                   className="p-3 sm:p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors cursor-pointer"
+                  onClick={() => handleProductClick(product)}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className={cn(
                       "text-lg font-display font-bold",
-                      getScoreColor(product.score)
+                      getScoreColor(product.fitScore)
                     )}>
-                      {product.score}
+                      {product.fitScore}
                     </span>
                     <span className={cn(
                       "text-xs px-2 py-0.5 rounded-full capitalize",
@@ -555,6 +720,111 @@ export default function Products() {
             )}
           </div>
         </motion.div>
+
+        {/* Product Detail Modal */}
+        <Dialog open={productModalOpen} onOpenChange={setProductModalOpen}>
+          <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto scrollbar-custom">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold break-words pr-8">
+                {selectedProduct?.name}
+              </DialogTitle>
+            </DialogHeader>
+            
+            {selectedProduct && (
+              <div className="space-y-6">
+                {/* Score and Verdict */}
+                <div className="flex items-center gap-4">
+                  <div className="relative h-16 w-16">
+                    <svg className="h-16 w-16 -rotate-90">
+                      <circle
+                        cx="32"
+                        cy="32"
+                        r="28"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        className="text-muted"
+                      />
+                      <motion.circle
+                        cx="32"
+                        cy="32"
+                        r="28"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                        className={cn(getScoreColor(selectedProduct.fitScore))}
+                        strokeDasharray={`${selectedProduct.fitScore * 1.76} 176`}
+                        initial={{ strokeDasharray: "0 176" }}
+                        animate={{ strokeDasharray: `${selectedProduct.fitScore * 1.76} 176` }}
+                        transition={{ duration: 1, ease: "easeOut" }}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className={cn("font-display text-lg font-bold", getScoreColor(selectedProduct.fitScore))}>
+                        {selectedProduct.fitScore}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium capitalize",
+                        getVerdictColor(selectedProduct.verdict)
+                      )}
+                    >
+                      {selectedProduct.verdict === "great" && <Check size={14} />}
+                      {selectedProduct.verdict === "caution" && <AlertTriangle size={14} />}
+                      {selectedProduct.verdict === "good" && <Info size={14} />}
+                      {selectedProduct.verdict} fit
+                    </span>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Evaluated on {new Date(selectedProduct.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* AI Insights */}
+                <div>
+                  <h4 className="font-display text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                    AI-Generated Insights
+                  </h4>
+                  <ul className="space-y-2">
+                    {selectedProduct.insights.map((insight, i) => (
+                      <motion.li
+                        key={i}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.1 }}
+                        className="flex items-start gap-2 text-sm text-foreground"
+                      >
+                        <Sparkles size={14} className="text-primary mt-0.5 shrink-0" />
+                        {insight}
+                      </motion.li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Similar User Feedback */}
+                <div>
+                  <h4 className="font-display text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                    Similar User Feedback
+                  </h4>
+                  <p className="text-sm text-foreground bg-muted/50 rounded-xl p-4">
+                    {selectedProduct.similarUserFeedback}
+                  </p>
+                </div>
+
+                {/* Footer */}
+                <div className="pt-4 border-t border-border">
+                  <p className="text-xs text-muted-foreground">
+                    This analysis was generated based on your skin profile and similar user experiences. Always patch test new products before full use.
+                  </p>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
