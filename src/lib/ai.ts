@@ -82,51 +82,150 @@ export const evaluateProduct = async (
   const skinContext = userSkinType ? `User's skin type: ${userSkinType}. ` : '';
   const goalsContext = userGoals?.length ? `User's goals: ${userGoals.join(', ')}. ` : '';
   
-  const prompt = `Evaluate this skincare product: "${productName}"
+  const prompt = `As a skincare expert, evaluate this product: "${productName}"
 
 ${skinContext}${goalsContext}
 
-Provide a concise evaluation in JSON format:
+Consider:
+- Ingredient compatibility with skin type
+- Effectiveness for stated goals
+- Potential irritation or sensitivity concerns
+- Real-world user experience patterns
+
+Provide evaluation in JSON format:
 {
   "fitScore": number (0-100),
-  "verdict": "great" | "good" | "caution",
-  "insights": [string array with 3-4 key insights],
-  "recommendation": "brief recommendation string"
+  "verdict": "great" | "good" | "caution", 
+  "insights": [array with 3-4 specific, actionable insights],
+  "recommendation": "specific recommendation based on skin profile"
 }
 
-Be honest and practical. Focus on real-world effectiveness and potential concerns.`;
+Be specific and practical. Focus on ingredient interactions and realistic expectations.`;
 
   try {
+    console.log('AI Product Evaluation Prompt:', prompt);
     const response = await generateAIResponse(prompt);
+    console.log('AI Response:', response);
     
     // Try to extract JSON from response
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        fitScore: Math.max(0, Math.min(100, parsed.fitScore || 70)),
-        verdict: parsed.verdict || 'good',
-        insights: Array.isArray(parsed.insights) ? parsed.insights : [],
-        recommendation: parsed.recommendation || 'Consider patch testing before full use.'
-      };
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        console.log('Parsed AI Response:', parsed);
+        return {
+          fitScore: Math.max(0, Math.min(100, parsed.fitScore || 70)),
+          verdict: parsed.verdict || 'good',
+          insights: Array.isArray(parsed.insights) ? parsed.insights : [],
+          recommendation: parsed.recommendation || 'Consider patch testing before full use.'
+        };
+      } catch (parseError) {
+        console.error('JSON parsing error:', parseError, 'Response was:', response);
+      }
+    } else {
+      console.error('No JSON found in AI response:', response);
     }
     
-    // Fallback if JSON parsing fails
+    // Better fallback based on skin type and goals
+    const fallbackInsights = getFallbackInsights(userSkinType, userGoals);
+    console.log('Using fallback insights:', fallbackInsights);
     return {
       fitScore: 70,
       verdict: 'good' as const,
-      insights: ['Limited evaluation data available. Consider patch testing.'],
-      recommendation: 'Patch test before incorporating into routine.'
+      insights: fallbackInsights.insights,
+      recommendation: fallbackInsights.recommendation
     };
   } catch (error) {
     console.error('Product evaluation error:', error);
+    console.error('Error details:', {
+      message: error?.message,
+      stack: error?.stack,
+      productName,
+      userSkinType,
+      userGoals
+    });
+    
+    // Context-aware fallback for errors
+    const fallbackInsights = getFallbackInsights(userSkinType, userGoals);
     return {
       fitScore: 65,
       verdict: 'caution' as const,
-      insights: ['Unable to generate evaluation at this time.'],
-      recommendation: 'Consult with a dermatologist or patch test carefully.'
+      insights: fallbackInsights.insights,
+      recommendation: fallbackInsights.recommendation
     };
   }
+};
+
+/**
+ * Get context-aware fallback insights when AI evaluation fails
+ */
+const getFallbackInsights = (skinType?: string, goals?: string[]) => {
+  const skinTypeInsights: Record<string, { insights: string[], recommendation: string }> = {
+    'oily': {
+      insights: [
+        'Look for non-comedogenic and oil-free formulations',
+        'Gel-based textures may work better than creams',
+        'Salicylic acid can help control excess oil'
+      ],
+      recommendation: 'Focus on lightweight, oil-controlling products'
+    },
+    'dry': {
+      insights: [
+        'Choose products with hydrating ingredients like hyaluronic acid',
+        'Cream-based formulations provide more moisture',
+        'Avoid alcohol-heavy products that can be drying'
+      ],
+      recommendation: 'Prioritize hydrating and barrier-supporting ingredients'
+    },
+    'combination': {
+      insights: [
+        'Balance is key - treat different zones differently',
+        'Lightweight moisturizers work well for combination skin',
+        'Avoid overly heavy or overly drying products'
+      ],
+      recommendation: 'Use balanced formulations that address both oily and dry areas'
+    },
+    'sensitive': {
+      insights: [
+        'Patch test new products for 24-48 hours',
+        'Look for fragrance-free and hypoallergenic formulas',
+        'Start with lower concentrations of active ingredients'
+      ],
+      recommendation: 'Choose gentle formulations with minimal irritants'
+    },
+    'normal': {
+      insights: [
+        'Most products are well-tolerated by normal skin types',
+        'Focus on maintaining your skin\'s balance',
+        'Prevention is easier than correction'
+      ],
+      recommendation: 'Maintain your current routine with supportive products'
+    }
+  };
+
+  const goalInsights: Record<string, string> = {
+    'acne': 'Consider ingredients like salicylic acid, benzoyl peroxide, or retinoids',
+    'glow': 'Look for vitamin C, niacinamide, and gentle exfoliants',
+    'hydrate': 'Hyaluronic acid, glycerin, and ceramides are beneficial',
+    'protect': 'Antioxidants and SPF-containing products are essential'
+  };
+
+  const defaultInsights = {
+    insights: [
+      'Research key ingredients before trying new products',
+      'Start with patch testing to check for reactions',
+      'Introduce new products one at a time'
+    ],
+    recommendation: 'Build your routine gradually and monitor results'
+  };
+
+  const skinBased = skinTypeInsights[skinType || ''] || defaultInsights;
+  const goalBased = goals?.map(goal => goalInsights[goal]).filter(Boolean).join(' ');
+  
+  return {
+    insights: skinBased.insights,
+    recommendation: goalBased ? `${skinBased.recommendation}. ${goalBased}.` : skinBased.recommendation
+  };
 };
 
 /**

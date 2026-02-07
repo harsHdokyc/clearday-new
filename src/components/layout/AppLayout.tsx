@@ -20,8 +20,11 @@ export function AppLayout() {
     return <Navigate to="/login" replace />;
   }
 
-  // Check if user has completed onboarding (profile exists)
-  if (!profile) {
+  // Check if user has completed onboarding
+  // Only redirect to onboarding if profile exists but both skin_goal and skin_type are null
+  // This means the user started onboarding but didn't complete it
+  // If profile is null (fetch failed) or has at least one field, allow dashboard access
+  if (profile && profile.skin_goal === null && profile.skin_type === null) {
     return <Navigate to="/onboarding" replace />;
   }
 

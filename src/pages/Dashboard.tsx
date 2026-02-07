@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 import { StreakSection } from "@/components/dashboard/StreakSection";
 import { CheckInCard } from "@/components/dashboard/CheckInCard";
 import { ProgressCard } from "@/components/dashboard/ProgressCard";
 import { InsightCard } from "@/components/ui/insight-card";
 import { StreakWarning } from "@/components/dashboard/StreakWarning";
-import { Bell, User } from "lucide-react";
+import { NotificationDropdown } from "@/components/ui/NotificationDropdown";
+import { User, Settings, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { uploadPhoto, saveCheckIn, getTodayCheckIn, updateCheckInRoutine, getProfileRoutine, saveProfileRoutine, getTodayRoutineCompletion, getPreviousDayCheckIn, getProgressHistory } from "@/lib/storage";
@@ -15,7 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 import heroImage from "@/assets/hero-skincare.jpg";
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
   const [hasCheckedInToday, setHasCheckedInToday] = useState(false);
@@ -43,6 +46,34 @@ export default function Dashboard() {
   );
 
   const [progressHistory, setProgressHistory] = useState<Array<{ date: string; hasData: boolean; value?: number }>>([]);
+
+  // Notification state
+  const [notifications, setNotifications] = useState([
+    {
+      id: 1,
+      title: "Daily Reminder",
+      message: "Time for your evening skincare routine!",
+      time: "2 hours ago",
+      read: false,
+      type: "reminder" as const
+    },
+    {
+      id: 2,
+      title: "Streak Milestone",
+      message: "You're on a 3-day streak! Keep it up!",
+      time: "1 day ago",
+      read: false,
+      type: "achievement" as const
+    },
+    {
+      id: 3,
+      title: "Progress Update",
+      message: "Your skin clarity has improved by 15%",
+      time: "2 days ago",
+      read: true,
+      type: "progress" as const
+    }
+  ]);
 
   // Analyze skin progress when photos are available
   const analyzeProgress = async () => {
@@ -207,6 +238,39 @@ export default function Dashboard() {
     }
   };
 
+  // Notification handlers for the component
+  const markAsRead = (id: number) => {
+    setNotifications(prev => 
+      prev.map(notif => 
+        notif.id === id ? { ...notif, read: true } : notif
+      )
+    );
+  };
+
+  const markAllAsRead = () => {
+    setNotifications(prev => 
+      prev.map(notif => ({ ...notif, read: true }))
+    );
+  };
+
+  const clearNotifications = () => {
+    setNotifications([]);
+  };
+
+  const handleUserMenuClick = () => {
+    navigate("/settings");
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate("/login");
+      toast({ title: "Logged out", description: "You have been successfully logged out" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to logout", variant: "destructive" });
+    }
+  };
+
   return (
     <div className="min-h-screen">
       {/* Hero Header */}
@@ -235,12 +299,24 @@ export default function Dashboard() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon" className="bg-background/50 backdrop-blur h-9 w-9 sm:h-10 sm:w-10">
-                    <Bell size={18} className="sm:w-5 sm:h-5" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="bg-background/50 backdrop-blur h-9 w-9 sm:h-10 sm:w-10">
-                    <User size={18} className="sm:w-5 sm:h-5" />
-                  </Button>
+                  <NotificationDropdown
+                    notifications={notifications}
+                    onMarkAsRead={markAsRead}
+                    onMarkAllAsRead={markAllAsRead}
+                    onClearAll={clearNotifications}
+                  />
+                  <div className="relative">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="bg-background/50 backdrop-blur h-9 w-9 sm:h-10 sm:w-10"
+                      onClick={handleUserMenuClick}
+                      title="User Menu"
+                    >
+                      <User size={18} className="sm:w-5 sm:h-5" />
+                    </Button>
+                    {/* Dropdown menu could be added here for more options */}
+                  </div>
                 </div>
               </div>
             </motion.div>
