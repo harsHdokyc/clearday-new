@@ -33,7 +33,7 @@ const skinTypes = [
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { isAuthenticated, user, refreshProfile } = useAuth();
+  const { isAuthenticated, user, profile, refreshProfile } = useAuth();
   const [step, setStep] = useState(0);
   const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(null);
@@ -48,20 +48,49 @@ export default function Onboarding() {
     const goal = selectedGoal || "";
     const type = selectedType || "";
     setSaving(true);
+    
     try {
       if (user?.id) {
-        await supabase.from("profiles").update({
-          skin_goal: goal || null,
-          skin_type: type || null,
-          updated_at: new Date().toISOString(),
-        }).eq("id", user.id);
+        const saveWithRetry = async (attempt = 1): Promise<any> => {
+          const savePromise = supabase.from("profiles").upsert({
+            id: user.id,
+            skin_goal: goal || null,
+            skin_type: type || null,
+            updated_at: new Date().toISOString(),
+          }).eq("id", user.id).select();
+          
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Database save timeout')), 10000)
+          );
+          
+          try {
+            const result = await Promise.race([savePromise, timeoutPromise]) as any;
+            return result;
+          } catch (error: any) {
+            if (attempt < 3) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              return saveWithRetry(attempt + 1);
+            }
+            throw error;
+          }
+        };
+        
+        const result = await saveWithRetry();
+        const { data, error } = result;
+        
+        if (error) {
+          throw error;
+        }
+        
+        if (!data || data.length === 0) {
+          throw new Error('Save failed: No data returned');
+        }
+        
         await refreshProfile();
+        navigate("/dashboard");
       }
-      navigate("/dashboard");
-    } catch (e) {
-      console.error("Onboarding save:", e);
-      // Still navigate to dashboard even if backend fails
-      navigate("/dashboard");
+    } catch (e: any) {
+      alert(`Failed to save profile: ${e.message}. Please try again.`);
     } finally {
       setSaving(false);
     }

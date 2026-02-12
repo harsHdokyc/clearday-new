@@ -13,14 +13,14 @@ export interface Profile {
   skin_type: string | null;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signUp: (email: string, password: string, name?: string) => Promise<{ success: boolean; error?: string; needsVerification?: boolean }>;
-  verifyEmail: (token: string, type?: 'email' | 'signup') => Promise<{ success: boolean; error?: string }>;
-  verifyOtp: (email: string, token: string, type?: 'email' | 'signup') => Promise<{ success: boolean; error?: string }>;
+  verifyEmail: (email: string, token: string) => Promise<{ success: boolean; error?: string }>;
+  verifyOtp: (email: string, token: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   isLoading: boolean;
@@ -32,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -115,7 +116,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setUserFromSession = async (supabaseUser: SupabaseUser) => {
-    // Set user immediately with metadata, don't wait for profile
+    // Prevent duplicate calls
+    if (isInitialized) {
+      return;
+    }
+    
+    // Set user immediately with metadata
     const userData: User = {
       email: supabaseUser.email || '',
       name: supabaseUser.user_metadata?.name || supabaseUser.user_metadata?.full_name || supabaseUser.email?.split('@')[0] || 'User',
@@ -124,24 +130,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setUser(userData);
 
-    // Fetch profile (name, skin_goal, skin_type)
+    // Fetch profile with retry logic
     try {
-      const profilePromise = supabase
-        .from('profiles')
-        .select('name, skin_goal, skin_type')
-        .eq('id', supabaseUser.id)
-        .maybeSingle();
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 2000)
-      );
-      const result = await Promise.race([profilePromise, timeoutPromise]) as { data?: { name?: string; skin_goal?: string | null; skin_type?: string | null } };
-      const p = result?.data;
-      if (p) {
-        if (p.name) setUser((u) => (u ? { ...u, name: p!.name! } : u));
-        setProfile({ skin_goal: p.skin_goal ?? null, skin_type: p.skin_type ?? null });
+      const fetchWithRetry = async (attempt = 1): Promise<any> => {
+        const fetchPromise = supabase
+          .from('profiles')
+          .select('name, skin_goal, skin_type')
+          .eq('id', supabaseUser.id)
+          .maybeSingle();
+        
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Profile fetch timeout')), 10000)
+        );
+        
+        try {
+          const result = await Promise.race([fetchPromise, timeoutPromise]) as any;
+          return result;
+        } catch (error: any) {
+          if (attempt < 3) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return fetchWithRetry(attempt + 1);
+          }
+          throw error;
+        }
+      };
+      
+      const result = await fetchWithRetry();
+      const { data, error } = result;
+      
+      if (error) {
+        return;
       }
-    } catch {
-      // timeouts or missing table: keep user, leave profile null
+      
+      if (data) {
+        if (data.name) setUser((u) => (u ? { ...u, name: data!.name! } : u));
+        setProfile({ skin_goal: data.skin_goal ?? null, skin_type: data.skin_type ?? null });
+      }
+    } catch (error: any) {
+      // Continue without profile - user can still access dashboard
+    } finally {
+      setIsInitialized(true);
     }
   };
 
@@ -309,17 +337,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await supabase.auth.signOut();
       setUser(null);
       setProfile(null);
+      setIsInitialized(false);
     } catch (error) {
-      console.error("Error logging out:", error);
+      // Handle error silently
     }
   };
 
   const refreshProfile = async () => {
     const u = user;
-    if (!u?.id) return;
-    const { data } = await supabase.from('profiles').select('skin_goal, skin_type').eq('id', u.id).maybeSingle();
-    if (data) {
-      setProfile({ skin_goal: data.skin_goal ?? null, skin_type: data.skin_type ?? null });
+    
+    if (!u?.id) {
+      return;
+    }
+    
+    try {
+      const { data, error } = await supabase.from('profiles').select('name, skin_goal, skin_type').eq('id', u.id).maybeSingle();
+      
+      if (error) {
+        return;
+      }
+      
+      if (data) {
+        setProfile({ skin_goal: data.skin_goal ?? null, skin_type: data.skin_type ?? null });
+        
+        if (data.name) {
+          setUser(prev => prev ? { ...prev, name: data.name! } : prev);
+        }
+      }
+    } catch (error) {
+      // Handle error silently
     }
   };
 

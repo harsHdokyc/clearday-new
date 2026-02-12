@@ -50,14 +50,16 @@ export function AppLayout(): JSX.Element {
   /**
    * Onboarding completion check
    * 
-   * Logic: Profile is only considered complete when BOTH skin_goal AND skin_type are provided.
+   * Logic: Profile is only considered incomplete when BOTH skin_goal AND skin_type are null.
    * This ensures:
    * - Users must complete both fields to create a valid profile
-   * - Users with incomplete onboarding (missing either field) are redirected to onboarding
-   * - Users with failed profile fetch (profile = null) are redirected to onboarding to complete profile
-   * - Only users with both skin_goal AND skin_type can access the app
+   * - Users with incomplete onboarding (missing both fields) are redirected to onboarding
+   * - Users with failed profile fetch (profile = null) can access dashboard (existing users)
+   * - Users with at least one field completed can access the app
    */
-  if (!profile || profile.skin_goal === null || profile.skin_type === null) {
+  const shouldRedirectToOnboarding = profile && profile.skin_goal === null && profile.skin_type === null;
+
+  if (shouldRedirectToOnboarding) {
     return <Navigate to="/onboarding" replace />;
   }
 
