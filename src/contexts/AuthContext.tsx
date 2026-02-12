@@ -188,7 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Login request timeout')), 10000)
+        setTimeout(() => reject(new Error('Login request timeout')), 30000)
       );
 
       const { data, error } = await Promise.race([loginPromise, timeoutPromise]) as any;

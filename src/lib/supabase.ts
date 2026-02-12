@@ -21,6 +21,13 @@ export const supabase = createClient(supabaseUrl || 'https://placeholder.supabas
     headers: {
       'X-Client-Info': 'clearday-app',
     },
+    fetch: (url: string | Request, options?: RequestInit) => {
+      const defaultFetch = fetch;
+      return defaultFetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(25000), // 25 second timeout for all requests
+      });
+    },
   },
 });
 

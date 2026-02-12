@@ -8,7 +8,6 @@ import { supabase } from "@/lib/supabase";
 import { 
   Sparkles, 
   Droplets, 
-  Sun, 
   Shield, 
   ArrowRight, 
   Check,
