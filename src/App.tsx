@@ -1,50 +1,63 @@
+/**
+ * Main Application Component
+ * 
+ * This is the root component of the ClearDay Skincare application. It sets up all necessary
+ * providers and context wrappers for the entire application ecosystem.
+ * 
+ * @fileoverview Application root with providers setup
+ * @author ClearDay Skincare Team
+ * @since 1.0.0
+ */
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
-import { AppLayout } from "@/components/layout/AppLayout";
-import Landing from "./pages/Landing";
-import Login from "./pages/Login";
-import SignUp from "./pages/SignUp";
-import EmailVerification from "./pages/EmailVerification";
-import Onboarding from "./pages/Onboarding";
-import Dashboard from "./pages/Dashboard";
-import History from "./pages/History";
-import Products from "./pages/Products";
-import Journey from "./pages/Journey";
-import Settings from "./pages/Settings";
-import NotFound from "./pages/NotFound";
+import { AppRoutes } from "@/routing";
 
-const queryClient = new QueryClient();
+/**
+ * React Query client instance
+ * 
+ * Configured with default settings for optimal performance and caching behavior.
+ * This instance is shared across the entire application for consistent data fetching.
+ */
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+      staleTime: 5 * 60 * 1000, // 5 minutes
+    },
+  },
+});
 
-const App = () => (
+/**
+ * Root Application Component
+ * 
+ * Wraps the entire application with necessary context providers and sets up routing.
+ * Provider order is important for proper context availability.
+ * 
+ * @returns JSX element representing the complete application structure
+ * 
+ * @since 1.0.0
+ */
+const App = (): JSX.Element => (
   <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
     <NotificationProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
+          {/* Toast notifications for user feedback */}
           <Toaster />
           <Sonner />
+          
+          {/* Router with application routes */}
           <BrowserRouter>
             <AuthProvider>
-              <Routes>
-                <Route path="/" element={<Landing />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/signup" element={<SignUp />} />
-                <Route path="/verify-email" element={<EmailVerification />} />
-                <Route path="/onboarding" element={<Onboarding />} />
-                <Route element={<AppLayout />}>
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/history" element={<History />} />
-                  <Route path="/products" element={<Products />} />
-                  <Route path="/journey" element={<Journey />} />
-                  <Route path="/settings" element={<Settings />} />
-                </Route>
-                <Route path="*" element={<NotFound />} />
-              </Routes>
+              <AppRoutes />
             </AuthProvider>
           </BrowserRouter>
         </TooltipProvider>
