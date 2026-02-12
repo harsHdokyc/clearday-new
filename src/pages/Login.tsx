@@ -23,13 +23,7 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      // Add timeout wrapper
-      const loginPromise = login(email, password);
-      const timeoutPromise = new Promise<{ success: boolean; error?: string }>((_, reject) => 
-        setTimeout(() => reject(new Error('Login request timed out. Please check your connection.')), 15000)
-      );
-
-      const result = await Promise.race([loginPromise, timeoutPromise]);
+      const result = await login(email, password);
       
       if (result.success) {
         // Small delay to ensure state updates

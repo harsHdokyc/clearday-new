@@ -50,13 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // Add timeout to session check
-        const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Session check timeout')), 5000)
-        );
-
-        const { data: { session }, error } = await Promise.race([sessionPromise, timeoutPromise]) as any;
+        const { data: { session }, error } = await supabase.auth.getSession();
         
         if (!mounted) return;
         
@@ -84,17 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Set a fallback timeout to ensure loading doesn't hang forever
-    const timeoutId = setTimeout(() => {
-      if (mounted) {
-        console.warn("Session check taking too long, setting loading to false");
-        setIsLoading(false);
-      }
-    }, 3000);
-
-    checkUser().finally(() => {
-      clearTimeout(timeoutId);
-    });
+    checkUser();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -181,17 +165,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: "Supabase is not configured. Please add VITE_SUPABASE_ANON_KEY to your .env file." };
       }
 
-      // Add timeout to login request
-      const loginPromise = supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Login request timeout')), 30000)
-      );
-
-      const { data, error } = await Promise.race([loginPromise, timeoutPromise]) as any;
 
       if (error) {
         return { success: false, error: error.message };
@@ -208,9 +185,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: "Login failed - no user data returned" };
     } catch (error: any) {
       const errorMessage = error?.message || "An error occurred during login";
-      if (errorMessage.includes('timeout')) {
-        return { success: false, error: "Login request timed out. Please check your internet connection and try again." };
-      }
       return { success: false, error: errorMessage };
     }
   };
@@ -259,7 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: data.user.id,
               email: data.user.email,
               name: name || email.split('@')[0],
-            })
+            } as any)
             .select()
             .single();
 
@@ -351,7 +325,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     
     try {
-      const { data, error } = await supabase.from('profiles').select('name, skin_goal, skin_type').eq('id', u.id).maybeSingle();
+      const { data, error } = await supabase.from('profiles').select('name, skin_goal, skin_type').eq('id', u.id).maybeSingle() as any;
       
       if (error) {
         return;

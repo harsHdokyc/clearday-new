@@ -56,7 +56,7 @@ export default function Onboarding() {
             skin_goal: goal || null,
             skin_type: type || null,
             updated_at: new Date().toISOString(),
-          }).eq("id", user.id).select();
+          } as any).eq("id", user.id).select();
           
           const timeoutPromise = new Promise((_, reject) =>
             setTimeout(() => reject(new Error('Database save timeout')), 10000)
