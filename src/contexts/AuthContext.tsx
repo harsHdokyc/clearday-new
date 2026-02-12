@@ -34,6 +34,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
 
+  // 30-day session management
+  const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+  const SESSION_KEY = 'clearday-session-start';
+
+  const checkSessionExpiry = () => {
+    if (typeof window === 'undefined') return false;
+    
+    const sessionStart = localStorage.getItem(SESSION_KEY);
+    if (!sessionStart) return false;
+    
+    const sessionAge = Date.now() - parseInt(sessionStart);
+    return sessionAge >= SESSION_DURATION;
+  };
+
+  const setSessionStart = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SESSION_KEY, Date.now().toString());
+    }
+  };
+
+  const clearSession = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     
@@ -45,6 +71,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!supabaseKey) {
           console.warn("Supabase anon key not configured. Skipping session check.");
           if (mounted) {
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        // Check if session has expired (30 days)
+        if (checkSessionExpiry()) {
+          console.log("Session expired, logging out...");
+          await supabase.auth.signOut();
+          clearSession();
+          if (mounted) {
+            setUser(null);
+            setProfile(null);
             setIsLoading(false);
           }
           return;
@@ -63,6 +102,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         
         if (session?.user) {
+          // Set session start time if not exists
+          if (!localStorage.getItem(SESSION_KEY)) {
+            setSessionStart();
+          }
           // Don't await - let it run in background
           setUserFromSession(session.user).catch(err => {
             console.error("Error setting user from session:", err);
@@ -175,6 +218,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (data?.user) {
+        // Set 30-day session start time
+        setSessionStart();
         // Don't await setUserFromSession - let it run in background
         setUserFromSession(data.user).catch(err => {
           console.error("Error setting user from session:", err);
@@ -312,6 +357,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setProfile(null);
       setIsInitialized(false);
+      // Clear 30-day session tracker
+      clearSession();
     } catch (error) {
       // Handle error silently
     }

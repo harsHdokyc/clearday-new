@@ -21,6 +21,8 @@ export const supabase = (() => {
       autoRefreshToken: true,
       detectSessionInUrl: true,
       storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      // Custom storage key to manage 30-day expiry
+      storageKey: 'clearday-auth-token',
     },
     global: {
       headers: {
