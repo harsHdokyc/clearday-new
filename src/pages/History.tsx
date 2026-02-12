@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { format, subDays, isSameDay, parseISO } from "date-fns";
-import { Calendar, Check, X, Sparkles } from "lucide-react";
+import { Calendar, Check, X, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
-import { getUserCheckIns } from "@/lib/storage";
+import { getUserCheckIns, getPreviousDayCheckIn } from "@/lib/storage";
+import { analyzeSkinProgress } from "@/lib/ai";
+import { supabase } from "@/lib/supabase";
 
 type HistoryEntry = {
   date: Date;
@@ -13,6 +15,9 @@ type HistoryEntry = {
   photoUrl: string | null;
   insight: string | null;
   routineSteps: number;
+  photoFrontUrl?: string | null;
+  photoRightUrl?: string | null;
+  photoLeftUrl?: string | null;
 };
 
 export default function History() {
@@ -20,6 +25,7 @@ export default function History() {
   const [historyData, setHistoryData] = useState<HistoryEntry[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [analyzingInsight, setAnalyzingInsight] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -34,7 +40,10 @@ export default function History() {
           date,
           completed,
           photoUrl,
-          insight: r.ai_insight || (completed ? "Routine completed" : null),
+          photoFrontUrl: r.photo_front_url,
+          photoRightUrl: r.photo_right_url,
+          photoLeftUrl: r.photo_left_url,
+          insight: r.ai_insight || null, // Don't show fallback "Routine completed" anymore
           routineSteps: r.routine_completed ? 3 : 0,
         });
       });
@@ -56,6 +65,62 @@ export default function History() {
 
   // Create chronological version of data for calendar grid (oldest first)
   const chronologicalData = [...historyData].reverse();
+
+  // Generate AI insight for a selected entry
+  const generateAIInsight = async (entry: HistoryEntry) => {
+    if (!user?.id || !entry.photoFrontUrl || analyzingInsight) return;
+
+    setAnalyzingInsight(true);
+    
+    try {
+      // Get previous day's photos for comparison
+      const previousDate = new Date(entry.date);
+      previousDate.setDate(previousDate.getDate() - 1);
+      const previousDateStr = previousDate.toISOString().split('T')[0];
+      
+      const { data: previousData } = await supabase
+        .from('check_ins')
+        .select('photo_front_url, photo_right_url, photo_left_url')
+        .eq('user_id', user.id)
+        .eq('check_in_date', previousDateStr)
+        .maybeSingle();
+
+      const previousPhotos = previousData ? {
+        front: previousData.photo_front_url || undefined,
+        right: previousData.photo_right_url || undefined,
+        left: previousData.photo_left_url || undefined,
+      } : undefined;
+
+      const currentPhotos = {
+        front: entry.photoFrontUrl || undefined,
+        right: entry.photoRightUrl || undefined,
+        left: entry.photoLeftUrl || undefined,
+      };
+
+      // Generate AI analysis
+      const analysis = await analyzeSkinProgress(currentPhotos, previousPhotos);
+      
+      // Save the insight to database
+      const dateStr = format(entry.date, 'yyyy-MM-dd');
+      await supabase
+        .from('check_ins')
+        .update({ ai_insight: analysis.insight })
+        .eq('user_id', user.id)
+        .eq('check_in_date', dateStr);
+
+      // Update local state
+      setHistoryData(prev => prev.map(h => 
+        isSameDay(h.date, entry.date) 
+          ? { ...h, insight: analysis.insight }
+          : h
+      ));
+      
+    } catch (error) {
+      console.error('Error generating AI insight:', error);
+    } finally {
+      setAnalyzingInsight(false);
+    }
+  };
 
   const completedDays = historyData.filter((d) => d.completed).length;
   const completionRate = Math.round((completedDays / historyData.length) * 100);
@@ -151,7 +216,12 @@ export default function History() {
                       initial={{ opacity: 0, scale: 0.8 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: index * 0.02 }}
-                      onClick={() => setSelectedDate(entry.date)}
+                      onClick={() => {
+                        setSelectedDate(entry.date);
+                        if (entry.photoUrl && !entry.insight) {
+                          generateAIInsight(entry);
+                        }
+                      }}
                       className={cn(
                         "aspect-square rounded-lg sm:rounded-xl relative overflow-hidden transition-all group",
                         entry.completed
@@ -190,7 +260,12 @@ export default function History() {
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.02 }}
-                      onClick={() => setSelectedDate(entry.date)}
+                      onClick={() => {
+                        setSelectedDate(entry.date);
+                        if (entry.photoUrl && !entry.insight) {
+                          generateAIInsight(entry);
+                        }
+                      }}
                       className={cn(
                         "w-full flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl transition-all",
                         entry.completed
@@ -269,7 +344,7 @@ export default function History() {
                     </div>
                   )}
 
-                  {selectedEntry.insight && (
+                  {selectedEntry.insight ? (
                     <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 sm:p-4">
                       <div className="flex items-center gap-2 mb-2">
                         <Sparkles size={14} className="text-primary" />
@@ -277,7 +352,35 @@ export default function History() {
                       </div>
                       <p className="text-sm text-foreground">{selectedEntry.insight}</p>
                     </div>
-                  )}
+                  ) : selectedEntry.photoUrl ? (
+                    <div className="bg-muted/50 border border-muted rounded-xl p-3 sm:p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Sparkles size={14} className="text-muted-foreground" />
+                        <span className="text-xs font-medium text-muted-foreground uppercase">AI Analysis</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Get personalized skin analysis for this photo
+                      </p>
+                      <Button
+                        onClick={() => generateAIInsight(selectedEntry)}
+                        disabled={analyzingInsight}
+                        size="sm"
+                        className="w-full"
+                      >
+                        {analyzingInsight ? (
+                          <>
+                            <Loader2 size={14} className="mr-2 animate-spin" />
+                            Analyzing...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={14} className="mr-2" />
+                            Generate AI Insight
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  ) : null}
 
                   <div className="mt-4 pt-4 border-t border-border">
                     <p className="text-xs text-muted-foreground">
