@@ -6,11 +6,10 @@ import { CheckInCard } from "@/components/dashboard/CheckInCard";
 import { ProgressCard } from "@/components/dashboard/ProgressCard";
 import { InsightCard } from "@/components/ui/insight-card";
 import { StreakWarning } from "@/components/dashboard/StreakWarning";
-import { NotificationDropdown } from "@/components/ui/NotificationDropdown";
 import { User, Settings, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { uploadPhoto, saveCheckIn, getTodayCheckIn, updateCheckInRoutine, getProfileRoutine, saveProfileRoutine, getTodayRoutineCompletion, getPreviousDayCheckIn, getProgressHistory, getNotifications, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, clearAllNotifications, createStreakMilestoneNotification, createProgressNotification, Notification } from "@/lib/storage";
+import { uploadPhoto, saveCheckIn, getTodayCheckIn, updateCheckInRoutine, getProfileRoutine, saveProfileRoutine, getTodayRoutineCompletion, getPreviousDayCheckIn, getProgressHistory } from "@/lib/storage";
 import { getStreakData, applyReset } from "@/lib/streaks";
 import { analyzeSkinProgress } from "@/lib/ai";
 import { useToast } from "@/hooks/use-toast";
@@ -47,22 +46,6 @@ export default function Dashboard() {
 
   const [progressHistory, setProgressHistory] = useState<Array<{ date: string; hasData: boolean; value?: number }>>([]);
 
-  // Notification state
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [notificationsLoading, setNotificationsLoading] = useState(true);
-
-  // Load notifications from database
-  const loadNotifications = async () => {
-    if (!user?.id) return;
-    try {
-      const userNotifications = await getNotifications(user.id);
-      setNotifications(userNotifications);
-    } catch (error) {
-      console.error('Error loading notifications:', error);
-    } finally {
-      setNotificationsLoading(false);
-    }
-  };
 
   // Analyze skin progress when photos are available
   const analyzeProgress = async () => {
@@ -115,8 +98,6 @@ export default function Dashboard() {
         await applyReset(user.id);
       }
       
-      // Load notifications
-      await loadNotifications();
     };
     run();
   }, [user?.id]);
@@ -137,17 +118,6 @@ export default function Dashboard() {
         }];
       });
       
-      // Check for progress improvements and create notifications
-      metrics.forEach(async (metric) => {
-        if (metric.trend === 'up' && metric.value > 5) { // Only notify for meaningful improvements
-          try {
-            await createProgressNotification(user.id, metric.label, metric.value);
-            await loadNotifications(); // Reload notifications to show the new one
-          } catch (error) {
-            console.error('Error creating progress notification:', error);
-          }
-        }
-      });
     }
   }, [existingPhotos]);
 
@@ -184,16 +154,6 @@ export default function Dashboard() {
     if (hasRequiredPhotos && routineCompleted) {
       await loadStreak();
       
-      // Check for streak milestones and create notifications
-      const newStreak = userData.currentStreak;
-      if (newStreak > 0 && (newStreak % 3 === 0 || newStreak % 7 === 0 || newStreak % 30 === 0)) {
-        try {
-          await createStreakMilestoneNotification(user.id, newStreak);
-          await loadNotifications(); // Reload notifications to show the new one
-        } catch (error) {
-          console.error('Error creating streak notification:', error);
-        }
-      }
     }
   };
 
@@ -253,41 +213,6 @@ export default function Dashboard() {
     }
   };
 
-  // Notification handlers for the component
-  const markAsRead = async (id: string) => {
-    try {
-      await markNotificationAsRead(id);
-      setNotifications(prev => 
-        prev.map(notif => 
-          notif.id === id ? { ...notif, read: true } : notif
-        )
-      );
-    } catch (error) {
-      console.error('Error marking notification as read:', error);
-    }
-  };
-
-  const markAllAsRead = async () => {
-    if (!user?.id) return;
-    try {
-      await markAllNotificationsAsRead(user.id);
-      setNotifications(prev => 
-        prev.map(notif => ({ ...notif, read: true }))
-      );
-    } catch (error) {
-      console.error('Error marking all notifications as read:', error);
-    }
-  };
-
-  const clearNotifications = async () => {
-    if (!user?.id) return;
-    try {
-      await clearAllNotifications(user.id);
-      setNotifications([]);
-    } catch (error) {
-      console.error('Error clearing notifications:', error);
-    }
-  };
 
   // Helper function to format time ago
   const formatTimeAgo = (dateString: string) => {
@@ -346,12 +271,6 @@ export default function Dashboard() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <NotificationDropdown
-                    notifications={notifications}
-                    onMarkAsRead={markAsRead}
-                    onMarkAllAsRead={markAllAsRead}
-                    onClearAll={clearNotifications}
-                  />
                   <div className="relative">
                     <Button 
                       variant="ghost" 
