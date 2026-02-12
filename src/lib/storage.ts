@@ -157,6 +157,49 @@ export const getPreviousDayCheckIn = async (userId: string) => {
 };
 
 /**
+ * Get photos from the past 3 days for comparison
+ * Returns the most recent day with photos within the last 3 days
+ */
+export const getRecentDayPhotos = async (userId: string): Promise<{ front?: string; right?: string; left?: string } | null> => {
+  try {
+    const today = new Date();
+    const photos = [];
+    
+    // Check the past 3 days (excluding today)
+    for (let daysAgo = 1; daysAgo <= 3; daysAgo++) {
+      const checkDate = new Date(today);
+      checkDate.setDate(checkDate.getDate() - daysAgo);
+      const dateStr = checkDate.toISOString().split('T')[0];
+      
+      const { data, error } = await supabase
+        .from('check_ins')
+        .select('photo_front_url, photo_right_url, photo_left_url')
+        .eq('user_id', userId)
+        .eq('check_in_date', dateStr)
+        .maybeSingle();
+
+      if (error) {
+        console.error(`Error fetching check-in for ${dateStr}:`, error);
+        continue;
+      }
+
+      if (data && (data.photo_front_url || data.photo_right_url || data.photo_left_url)) {
+        return {
+          front: data.photo_front_url || undefined,
+          right: data.photo_right_url || undefined,
+          left: data.photo_left_url || undefined,
+        };
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error fetching recent day photos:', error);
+    return null;
+  }
+};
+
+/**
  * Get progress history for visualization
  */
 export const getProgressHistory = async (userId: string): Promise<Array<{ date: string; hasData: boolean; value?: number }>> => {

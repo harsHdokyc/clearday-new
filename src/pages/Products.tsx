@@ -295,11 +295,17 @@ export default function Products() {
     
     try {
       const result = await evaluateProduct(productUrl, skinType, goals);
+      
+      if (!result) {
+        setError("AI evaluation temporarily unavailable. Please try again later.");
+        return;
+      }
+      
       const ev = {
         name: displayName,
         fitScore: result.fitScore,
         verdict: result.verdict,
-        insights: result.insights.length > 0 ? result.insights : ["Evaluation generated. Consider patch testing before full use."],
+        insights: result.insights,
         similarUserFeedback: result.recommendation,
         ingredients: [] as { name: string; benefit: string; concern?: string }[],
       };
@@ -315,114 +321,17 @@ export default function Products() {
         name: displayName, 
         fitScore: result.fitScore, 
         verdict: result.verdict,
-        insights: result.insights.length > 0 ? result.insights : ["Evaluation generated. Consider patch testing before full use."],
+        insights: result.insights,
         similarUserFeedback: result.recommendation,
         ingredients: [],
         created_at: new Date().toISOString(),
       }, ...prev.slice(0, 9)]);
     } catch (err: any) {
       console.error("Product evaluation error:", err);
-      
-      // Use context-aware fallback instead of generic error
-      const fallbackInsights = getFallbackProductInsights(skinType, goals);
-      setError("AI evaluation temporarily unavailable. Showing personalized recommendations based on your skin profile.");
-      setEvaluation({
-        name: displayName,
-        fitScore: fallbackInsights.fitScore,
-        verdict: fallbackInsights.verdict,
-        insights: fallbackInsights.insights,
-        similarUserFeedback: fallbackInsights.recommendation,
-        ingredients: [],
-      });
+      setError("Failed to evaluate product. Please check the URL and try again.");
     } finally {
       setIsSearching(false);
     }
-  };
-
-  /**
-   * Get fallback insights when AI evaluation fails
-   */
-  const getFallbackProductInsights = (skinType?: string, goals?: string[]) => {
-    const skinTypeData: Record<string, { score: number, verdict: "great" | "good" | "caution", insights: string[], recommendation: string }> = {
-      'oily': {
-        score: 75,
-        verdict: 'good',
-        insights: [
-          'Look for non-comedogenic and oil-free formulations',
-          'Gel-based textures typically work better than creams',
-          'Salicylic acid can help control excess oil production'
-        ],
-        recommendation: 'Focus on lightweight, oil-controlling products with ingredients like niacinamide or salicylic acid'
-      },
-      'dry': {
-        score: 80,
-        verdict: 'good', 
-        insights: [
-          'Choose products with hydrating ingredients like hyaluronic acid',
-          'Cream-based formulations provide more moisture retention',
-          'Avoid alcohol-heavy products that can be drying'
-        ],
-        recommendation: 'Prioritize hydrating and barrier-supporting ingredients like ceramides and glycerin'
-      },
-      'combination': {
-        score: 78,
-        verdict: 'good',
-        insights: [
-          'Balance is key - treat different zones differently',
-          'Lightweight moisturizers work well for combination skin',
-          'Avoid overly heavy or overly drying products'
-        ],
-        recommendation: 'Use balanced formulations that address both oily and dry areas'
-      },
-      'sensitive': {
-        score: 65,
-        verdict: 'caution',
-        insights: [
-          'Always patch test new products for 24-48 hours',
-          'Look for fragrance-free and hypoallergenic formulas',
-          'Start with lower concentrations of active ingredients'
-        ],
-        recommendation: 'Choose gentle formulations with minimal irritants and proven soothing ingredients'
-      },
-      'normal': {
-        score: 85,
-        verdict: 'great',
-        insights: [
-          'Most products are well-tolerated by normal skin types',
-          'Focus on maintaining your skin\'s current balance',
-          'Prevention and consistency are key strategies'
-        ],
-        recommendation: 'Maintain your current routine with supportive products that enhance your natural balance'
-      }
-    };
-
-    const goalInsights: Record<string, string> = {
-      'acne': 'Consider ingredients like salicylic acid, benzoyl peroxide, or retinoids for breakouts',
-      'glow': 'Look for vitamin C, niacinamide, and gentle exfoliants for radiance',
-      'hydrate': 'Hyaluronic acid, glycerin, and ceramides are beneficial for moisture',
-      'protect': 'Antioxidants and SPF-containing products are essential for protection'
-    };
-
-    const defaultData = {
-      score: 70,
-      verdict: 'good' as const,
-      insights: [
-        'Research key ingredients before trying new products',
-        'Start with patch testing to check for reactions',
-        'Introduce new products one at a time to monitor effects'
-      ],
-      recommendation: 'Build your routine gradually and monitor how your skin responds'
-    };
-
-    const skinBased = skinTypeData[skinType || ''] || defaultData;
-    const goalBased = goals?.map(goal => goalInsights[goal]).filter(Boolean).join('. ');
-    
-    return {
-      fitScore: skinBased.score,
-      verdict: skinBased.verdict,
-      insights: skinBased.insights,
-      recommendation: goalBased ? `${skinBased.recommendation}. ${goalBased}.` : skinBased.recommendation
-    };
   };
 
   const handleProductClick = (product: RecentProduct) => {

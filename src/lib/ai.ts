@@ -68,6 +68,7 @@ export const streamAIResponse = async function* (
 
 /**
  * Generate product evaluation insights
+ * Returns null if AI evaluation fails
  */
 export const evaluateProduct = async (
   productName: string,
@@ -78,7 +79,7 @@ export const evaluateProduct = async (
   verdict: 'great' | 'good' | 'caution';
   insights: string[];
   recommendation: string;
-}> => {
+} | null> => {
   const skinContext = userSkinType ? `User's skin type: ${userSkinType}. ` : '';
   const goalsContext = userGoals?.length ? `User's goals: ${userGoals.join(', ')}. ` : '';
   
@@ -113,28 +114,37 @@ Be specific and practical. Focus on ingredient interactions and realistic expect
       try {
         const parsed = JSON.parse(jsonMatch[0]);
         console.log('Parsed AI Response:', parsed);
+        
+        // Validate response structure
+        if (typeof parsed.fitScore !== 'number' || !['great', 'good', 'caution'].includes(parsed.verdict)) {
+          console.error('Invalid product evaluation structure:', parsed);
+          return null;
+        }
+        
+        if (!Array.isArray(parsed.insights) || parsed.insights.length === 0) {
+          console.error('Invalid insights in product evaluation:', parsed.insights);
+          return null;
+        }
+        
+        if (!parsed.recommendation || typeof parsed.recommendation !== 'string') {
+          console.error('Invalid recommendation in product evaluation:', parsed.recommendation);
+          return null;
+        }
+        
         return {
-          fitScore: Math.max(0, Math.min(100, parsed.fitScore || 70)),
-          verdict: parsed.verdict || 'good',
-          insights: Array.isArray(parsed.insights) ? parsed.insights : [],
-          recommendation: parsed.recommendation || 'Consider patch testing before full use.'
+          fitScore: Math.max(0, Math.min(100, parsed.fitScore)),
+          verdict: parsed.verdict,
+          insights: parsed.insights,
+          recommendation: parsed.recommendation
         };
       } catch (parseError) {
         console.error('JSON parsing error:', parseError, 'Response was:', response);
+        return null;
       }
     } else {
       console.error('No JSON found in AI response:', response);
+      return null;
     }
-    
-    // Better fallback based on skin type and goals
-    const fallbackInsights = getFallbackInsights(userSkinType, userGoals);
-    console.log('Using fallback insights:', fallbackInsights);
-    return {
-      fitScore: 70,
-      verdict: 'good' as const,
-      insights: fallbackInsights.insights,
-      recommendation: fallbackInsights.recommendation
-    };
   } catch (error) {
     console.error('Product evaluation error:', error);
     console.error('Error details:', {
@@ -144,97 +154,30 @@ Be specific and practical. Focus on ingredient interactions and realistic expect
       userSkinType,
       userGoals
     });
-    
-    // Context-aware fallback for errors
-    const fallbackInsights = getFallbackInsights(userSkinType, userGoals);
-    return {
-      fitScore: 65,
-      verdict: 'caution' as const,
-      insights: fallbackInsights.insights,
-      recommendation: fallbackInsights.recommendation
-    };
+    return null;
   }
 };
 
-/**
- * Get context-aware fallback insights when AI evaluation fails
- */
-const getFallbackInsights = (skinType?: string, goals?: string[]) => {
-  const skinTypeInsights: Record<string, { insights: string[], recommendation: string }> = {
-    'oily': {
-      insights: [
-        'Look for non-comedogenic and oil-free formulations',
-        'Gel-based textures may work better than creams',
-        'Salicylic acid can help control excess oil'
-      ],
-      recommendation: 'Focus on lightweight, oil-controlling products'
-    },
-    'dry': {
-      insights: [
-        'Choose products with hydrating ingredients like hyaluronic acid',
-        'Cream-based formulations provide more moisture',
-        'Avoid alcohol-heavy products that can be drying'
-      ],
-      recommendation: 'Prioritize hydrating and barrier-supporting ingredients'
-    },
-    'combination': {
-      insights: [
-        'Balance is key - treat different zones differently',
-        'Lightweight moisturizers work well for combination skin',
-        'Avoid overly heavy or overly drying products'
-      ],
-      recommendation: 'Use balanced formulations that address both oily and dry areas'
-    },
-    'sensitive': {
-      insights: [
-        'Patch test new products for 24-48 hours',
-        'Look for fragrance-free and hypoallergenic formulas',
-        'Start with lower concentrations of active ingredients'
-      ],
-      recommendation: 'Choose gentle formulations with minimal irritants'
-    },
-    'normal': {
-      insights: [
-        'Most products are well-tolerated by normal skin types',
-        'Focus on maintaining your skin\'s balance',
-        'Prevention is easier than correction'
-      ],
-      recommendation: 'Maintain your current routine with supportive products'
-    }
-  };
-
-  const goalInsights: Record<string, string> = {
-    'acne': 'Consider ingredients like salicylic acid, benzoyl peroxide, or retinoids',
-    'glow': 'Look for vitamin C, niacinamide, and gentle exfoliants',
-    'hydrate': 'Hyaluronic acid, glycerin, and ceramides are beneficial',
-    'protect': 'Antioxidants and SPF-containing products are essential'
-  };
-
-  const defaultInsights = {
-    insights: [
-      'Research key ingredients before trying new products',
-      'Start with patch testing to check for reactions',
-      'Introduce new products one at a time'
-    ],
-    recommendation: 'Build your routine gradually and monitor results'
-  };
-
-  const skinBased = skinTypeInsights[skinType || ''] || defaultInsights;
-  const goalBased = goals?.map(goal => goalInsights[goal]).filter(Boolean).join(' ');
-  
-  return {
-    insights: skinBased.insights,
-    recommendation: goalBased ? `${skinBased.recommendation}. ${goalBased}.` : skinBased.recommendation
-  };
-};
 
 /**
  * Generate skin progress insight
+ * Returns null if insufficient data or AI fails
  */
 export const generateProgressInsight = async (
   metrics: { label: string; value: number; trend: 'up' | 'down' }[],
   daysTracked: number
-): Promise<string> => {
+): Promise<string | null> => {
+  // Validate input data
+  if (!metrics || metrics.length === 0 || daysTracked < 2) {
+    return null;
+  }
+  
+  // Ensure we have meaningful metrics (not all zeros)
+  const hasMeaningfulData = metrics.some(m => m.value > 0);
+  if (!hasMeaningfulData) {
+    return null;
+  }
+
   const metricsSummary = metrics
     .map(m => `${m.label}: ${m.value}% (${m.trend === 'up' ? 'improving' : 'declining'})`)
     .join(', ');
@@ -248,15 +191,24 @@ Provide a brief, encouraging insight (1-2 sentences) about what's working and wh
 
   try {
     const response = await generateAIResponse(prompt);
-    return response.trim();
+    const trimmedResponse = response.trim();
+    
+    // Validate response is meaningful
+    if (trimmedResponse.length < 10) {
+      console.error('AI progress insight too short:', trimmedResponse);
+      return null;
+    }
+    
+    return trimmedResponse;
   } catch (error) {
     console.error('Progress insight error:', error);
-    return 'Keep tracking your progress. Consistency is key to seeing results.';
+    return null;
   }
 };
 
 /**
  * Analyze daily skin progress photos
+ * Returns null if insufficient data for analysis
  */
 export const analyzeSkinProgress = async (
   photoUrls: { front?: string; right?: string; left?: string },
@@ -264,18 +216,28 @@ export const analyzeSkinProgress = async (
 ): Promise<{
   metrics: { label: string; value: number; trend: 'up' | 'down' | 'neutral'; isGood: boolean }[];
   insight: string;
-}> => {
+} | null> => {
+  // Validate current photos exist
+  const hasCurrentPhotos = photoUrls.front || photoUrls.right || photoUrls.left;
+  if (!hasCurrentPhotos) {
+    return null;
+  }
+
+  // Validate comparison photos exist
+  const hasComparisonPhotos = previousDayPhotoUrls?.front || previousDayPhotoUrls?.right || previousDayPhotoUrls?.left;
+  if (!hasComparisonPhotos) {
+    return null;
+  }
+
   const photoContext = Object.entries(photoUrls)
     .filter(([_, url]) => url)
     .map(([view, url]) => `${view} view: available`)
     .join(', ');
 
-  const previousContext = previousDayPhotoUrls 
-    ? Object.entries(previousDayPhotoUrls)
-        .filter(([_, url]) => url)
-        .map(([view, url]) => `${view} view: available`)
-        .join(', ')
-    : 'no previous day photos';
+  const previousContext = Object.entries(previousDayPhotoUrls)
+    .filter(([_, url]) => url)
+    .map(([view, url]) => `${view} view: available`)
+    .join(', ');
 
   const prompt = `Analyze these skincare progress photos and provide metrics.
 
@@ -313,7 +275,7 @@ Guidelines:
 - Trend "down": getting better for acne/redness, getting worse for clarity  
 - isGood: true if trend is desirable, false if concerning
 - Be realistic and conservative in estimates
-- If photos are unclear, provide conservative estimates`;
+- Only provide analysis if photos are clear enough for comparison`;
 
   try {
     const response = await generateAIResponse(prompt);
@@ -322,36 +284,50 @@ Guidelines:
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        metrics: Array.isArray(parsed.metrics) ? parsed.metrics.map((m: any) => ({
-          label: m.label || 'Unknown',
-          value: Math.max(0, Math.min(100, m.value || 50)),
-          trend: ['up', 'down', 'neutral'].includes(m.trend) ? m.trend : 'neutral',
+      
+      // Validate the response structure
+      if (!parsed.metrics || !Array.isArray(parsed.metrics) || parsed.metrics.length !== 3) {
+        console.error('Invalid metrics structure in AI response:', parsed);
+        return null;
+      }
+
+      const validatedMetrics = parsed.metrics.map((m: any) => {
+        // Validate each metric has required fields
+        if (!m.label || typeof m.value !== 'number' || !['up', 'down', 'neutral'].includes(m.trend)) {
+          console.error('Invalid metric structure:', m);
+          return null;
+        }
+        
+        return {
+          label: m.label,
+          value: Math.max(0, Math.min(100, m.value)),
+          trend: m.trend,
           isGood: typeof m.isGood === 'boolean' ? m.isGood : true
-        })) : [],
-        insight: parsed.insight || 'Keep tracking your progress consistently.'
+        };
+      });
+
+      // Ensure all metrics are valid
+      if (validatedMetrics.some(m => m === null)) {
+        console.error('Some metrics failed validation:', validatedMetrics);
+        return null;
+      }
+
+      if (!parsed.insight || typeof parsed.insight !== 'string') {
+        console.error('Invalid insight in AI response:', parsed.insight);
+        return null;
+      }
+
+      return {
+        metrics: validatedMetrics,
+        insight: parsed.insight
       };
     }
     
-    // Fallback if JSON parsing fails
-    return {
-      metrics: [
-        { label: "Acne Reduction", value: 50, trend: "neutral" as const, isGood: true },
-        { label: "Redness", value: 50, trend: "neutral" as const, isGood: true },
-        { label: "Skin Clarity", value: 50, trend: "neutral" as const, isGood: true }
-      ],
-      insight: 'Continue tracking to see meaningful progress patterns.'
-    };
+    console.error('No valid JSON found in AI response:', response);
+    return null;
   } catch (error) {
     console.error('Skin progress analysis error:', error);
-    return {
-      metrics: [
-        { label: "Acne Reduction", value: 45, trend: "down" as const, isGood: true },
-        { label: "Redness", value: 40, trend: "down" as const, isGood: true },
-        { label: "Skin Clarity", value: 55, trend: "up" as const, isGood: true }
-      ],
-      insight: 'Analysis temporarily unavailable. Keep tracking consistently.'
-    };
+    return null;
   }
 };
 

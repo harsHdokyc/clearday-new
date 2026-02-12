@@ -9,7 +9,7 @@ import { StreakWarning } from "@/components/dashboard/StreakWarning";
 import { User, Settings, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { uploadPhoto, saveCheckIn, getTodayCheckIn, updateCheckInRoutine, getProfileRoutine, saveProfileRoutine, getTodayRoutineCompletion, getPreviousDayCheckIn, getProgressHistory } from "@/lib/storage";
+import { uploadPhoto, saveCheckIn, getTodayCheckIn, updateCheckInRoutine, getProfileRoutine, saveProfileRoutine, getTodayRoutineCompletion, getRecentDayPhotos, getProgressHistory } from "@/lib/storage";
 import { getStreakData, applyReset } from "@/lib/streaks";
 import { analyzeSkinProgress } from "@/lib/ai";
 import { useToast } from "@/hooks/use-toast";
@@ -52,14 +52,19 @@ export default function Dashboard() {
     if (!user?.id || !existingPhotos.front && !existingPhotos.right && !existingPhotos.left) return;
 
     try {
-      const previousDayPhotos = await getPreviousDayCheckIn(user.id);
+      const previousDayPhotos = await getRecentDayPhotos(user.id);
       const analysis = await analyzeSkinProgress(existingPhotos, previousDayPhotos);
       
-      setMetrics(analysis.metrics);
-      setInsightMessage(analysis.insight);
+      if (analysis) {
+        setMetrics(analysis.metrics);
+        setInsightMessage(analysis.insight);
+      } else {
+        // No analysis available - keep metrics at initial state
+        setInsightMessage("Need at least 2 days of photos to analyze progress. Keep tracking daily!");
+      }
     } catch (error) {
       console.error('Progress analysis error:', error);
-      // Keep existing metrics if analysis fails
+      setInsightMessage("Analysis temporarily unavailable. Continue your daily routine.");
     }
   };
 
@@ -124,6 +129,11 @@ export default function Dashboard() {
   // AI insight (best-effort, non-blocking)
   useEffect(() => {
     if (!user?.id || userData.daysTracked < 2) return;
+    
+    // Only generate insights if we have real metrics (not default zeros)
+    const hasRealMetrics = metrics.some(m => m.value > 0);
+    if (!hasRealMetrics) return;
+    
     import("@/lib/ai").then(({ generateProgressInsight }) => {
       const metricsForInsight = metrics.map(m => ({
         label: m.label,
@@ -132,7 +142,9 @@ export default function Dashboard() {
       }));
       generateProgressInsight(metricsForInsight, userData.daysTracked)
         .then(setInsightMessage)
-        .catch(() => {});
+        .catch(() => {
+          // Silently fail - keep existing message
+        });
     });
   }, [user?.id, userData.daysTracked, metrics]);
 
