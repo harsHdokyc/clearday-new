@@ -19,7 +19,21 @@
 
   <body>
     <div id="root"></div>
-    <script src="https://js.puter.com/v2/"></script>
+        <script>
+      // Puter.com initialization with error handling
+      (function() {
+        const script = document.createElement('script');
+        script.src = 'https://js.puter.com/v2/';
+        script.async = true;
+        script.onerror = function() {
+          console.warn('Puter.com script failed to load - AI features will be unavailable');
+        };
+        script.onload = function() {
+          console.log('Puter.com loaded successfully');
+        };
+        document.head.appendChild(script);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

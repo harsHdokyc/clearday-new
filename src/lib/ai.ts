@@ -1,7 +1,9 @@
 /**
  * AI Service using Puter.js
- * Clean, simple interface for Claude AI capabilities
+ * Clean, simple interface for Claude AI capabilities with robust error handling
  */
+
+import { puterMonitor } from './puter-status';
 
 // Type definitions for Puter.js responses
 interface AIChatResponse {
@@ -15,44 +17,112 @@ interface AIChatResponse {
 const DEFAULT_MODEL = 'claude-sonnet-4-5';
 
 /**
- * Check if Puter.js is loaded
+ * Check if Puter.js is loaded and available
  */
 const isPuterReady = (): boolean => {
   return typeof window !== 'undefined' && !!window.puter?.ai;
 };
 
 /**
- * Generate AI response using Claude
+ * Wait for Puter.js to be ready with timeout
  */
-export const generateAIResponse = async (
-  prompt: string,
-  model: string = DEFAULT_MODEL
-): Promise<string> => {
-  if (!isPuterReady()) {
-    throw new Error('Puter.js is not loaded. Please ensure the script is included.');
-  }
+const waitForPuter = (timeout = 5000): Promise<boolean> => {
+  return new Promise((resolve) => {
+    if (isPuterReady()) {
+      resolve(true);
+      return;
+    }
 
-  try {
-    const response = await window.puter!.ai.chat(prompt, { model }) as AIChatResponse;
-    return response.message?.content?.[0]?.text || '';
-  } catch (error) {
-    console.error('AI generation error:', error);
-    throw new Error('Failed to generate AI response');
-  }
+    const startTime = Date.now();
+    const checkInterval = setInterval(() => {
+      if (isPuterReady()) {
+        clearInterval(checkInterval);
+        resolve(true);
+      } else if (Date.now() - startTime > timeout) {
+        clearInterval(checkInterval);
+        resolve(false);
+      }
+    }, 100);
+  });
 };
 
 /**
- * Stream AI response for longer queries
+ * Generate AI response using Claude with retry logic
+ */
+export const generateAIResponse = async (
+  prompt: string,
+  model: string = DEFAULT_MODEL,
+  retries = 2
+): Promise<string> => {
+  // Check service status first
+  const status = puterMonitor.getStatus();
+  if (!status.available) {
+    throw new Error(`AI service currently unavailable. ${status.error || 'Please try again later.'}`);
+  }
+
+  // Wait for Puter to be ready
+  const ready = await waitForPuter();
+  if (!ready) {
+    throw new Error('Puter.js failed to load within timeout. AI features unavailable.');
+  }
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`AI Request (attempt ${attempt}/${retries}):`, { model, promptLength: prompt.length });
+      const response = await window.puter!.ai.chat(prompt, { model }) as AIChatResponse;
+      const result = response.message?.content?.[0]?.text || '';
+      
+      if (!result) {
+        throw new Error('Empty response from AI service');
+      }
+      
+      console.log('AI Response successful:', { resultLength: result.length });
+      return result;
+    } catch (error) {
+      console.error(`AI generation error (attempt ${attempt}/${retries}):`, error);
+      
+      // Update service status on error
+      await puterMonitor.checkServiceStatus();
+      
+      // Check for specific CORS/network errors
+      if (error instanceof Error) {
+        const message = error.message.toLowerCase();
+        if (message.includes('cors') || message.includes('network') || message.includes('fetch')) {
+          console.warn('Network/CORS error detected - Puter.com may be experiencing issues');
+        }
+        if (message.includes('502') || message.includes('bad gateway')) {
+          console.warn('Puter.com service appears to be down (502 Bad Gateway)');
+        }
+      }
+      
+      // If this is the last attempt, throw the error
+      if (attempt === retries) {
+        throw new Error(`AI service unavailable after ${retries} attempts. Please try again later.`);
+      }
+      
+      // Wait before retry (exponential backoff)
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+    }
+  }
+  
+  throw new Error('Unexpected error in AI generation');
+};
+
+/**
+ * Stream AI response for longer queries with error handling
  */
 export const streamAIResponse = async function* (
   prompt: string,
   model: string = DEFAULT_MODEL
 ): AsyncGenerator<string, void, unknown> {
-  if (!isPuterReady()) {
-    throw new Error('Puter.js is not loaded. Please ensure the script is included.');
+  // Wait for Puter to be ready
+  const ready = await waitForPuter();
+  if (!ready) {
+    throw new Error('Puter.js failed to load within timeout. AI streaming unavailable.');
   }
 
   try {
+    console.log('AI Stream Request:', { model, promptLength: prompt.length });
     const response = await window.puter!.ai.chat(prompt, { model, stream: true }) as AsyncIterable<Puter.AIStreamPart>;
     
     for await (const part of response) {
@@ -62,7 +132,19 @@ export const streamAIResponse = async function* (
     }
   } catch (error) {
     console.error('AI streaming error:', error);
-    throw new Error('Failed to stream AI response');
+    
+    // Check for specific CORS/network errors
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+      if (message.includes('cors') || message.includes('network') || message.includes('fetch')) {
+        console.warn('Network/CORS error detected during streaming - Puter.com may be experiencing issues');
+      }
+      if (message.includes('502') || message.includes('bad gateway')) {
+        console.warn('Puter.com service appears to be down during streaming (502 Bad Gateway)');
+      }
+    }
+    
+    throw new Error('Failed to stream AI response. Please check your connection and try again.');
   }
 };
 

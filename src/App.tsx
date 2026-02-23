@@ -22,15 +22,19 @@ import { AppRoutes } from "@/routing";
 /**
  * React Query client instance
  * 
- * Configured with default settings for optimal performance and caching behavior.
- * This instance is shared across the entire application for consistent data fetching.
+ * Configured with optimized caching settings for improved performance:
+ * - Extended stale time reduces unnecessary API calls
+ * - Added garbage collection time for better memory management
+ * - Reduced retry attempts for faster failure handling
+ * - Disabled refetch on window focus to prevent unnecessary requests
  */
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
       refetchOnWindowFocus: false,
-      staleTime: 5 * 60 * 1000, // 5 minutes
+      staleTime: 10 * 60 * 1000, // 10 minutes (increased from 5)
+      gcTime: 15 * 60 * 1000, // 15 minutes (garbage collection time)
     },
   },
 });

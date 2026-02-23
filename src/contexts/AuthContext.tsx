@@ -33,6 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
 
   // 30-day session management
   const SESSION_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
@@ -62,10 +63,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    const authStartTime = performance.now();
     
     // Check if user is logged in
     const checkUser = async () => {
       try {
+        console.log('🔐 [PERF] Authentication flow started');
+        
         // Check if Supabase is configured first
         const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
         if (!supabaseKey) {
@@ -89,32 +93,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const { data: { session }, error } = await supabase.auth.getSession();
+        const sessionStartTime = performance.now();
         
-        if (!mounted) return;
+        // Reduce session timeout and implement better fallback
+        const sessionPromise = supabase.auth.getSession();
+        const sessionTimeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Session retrieval timeout')), 2000) // Reduced from 5s
+        );
         
-        if (error) {
-          console.error("Error getting session:", error);
+        try {
+          const { data: { session }, error } = await Promise.race([sessionPromise, sessionTimeoutPromise]) as any;
+          const sessionEndTime = performance.now();
+          console.log(`🔐 [PERF] Session retrieval took ${(sessionEndTime - sessionStartTime).toFixed(2)}ms`);
+          
+          if (!mounted) return;
+          
+          if (error) {
+            console.log(`🔐 [PERF] Session retrieval error:`, error.message);
+            if (mounted) {
+              setIsLoading(false);
+            }
+            return;
+          }
+          
+          if (session?.user) {
+            // Set session start time if not exists
+            if (!localStorage.getItem(SESSION_KEY)) {
+              setSessionStart();
+            }
+            // Set user immediately, fetch profile in background
+            setUserFromSession(session.user).catch(err => {
+              console.error("Error setting user from session:", err);
+            });
+          }
+        } catch (sessionError: any) {
+          console.log(`🔐 [PERF] Session retrieval failed:`, sessionError.message);
+          // Continue without session - user will need to login
           if (mounted) {
             setIsLoading(false);
           }
           return;
         }
-        
-        if (session?.user) {
-          // Set session start time if not exists
-          if (!localStorage.getItem(SESSION_KEY)) {
-            setSessionStart();
-          }
-          // Don't await - let it run in background
-          setUserFromSession(session.user).catch(err => {
-            console.error("Error setting user from session:", err);
-          });
-        }
       } catch (error: any) {
         console.error("Error checking session:", error);
         // If timeout or other error, still set loading to false
       } finally {
+        const authEndTime = performance.now();
+        console.log(`🔐 [PERF] Total authentication flow took ${(authEndTime - authStartTime).toFixed(2)}ms`);
         if (mounted) {
           setIsLoading(false);
         }
@@ -144,9 +169,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const setUserFromSession = async (supabaseUser: SupabaseUser) => {
     // Prevent duplicate calls
-    if (isInitialized) {
+    if (isInitialized || isProfileLoading) {
+      console.log('👤 [PERF] Skipping profile fetch - already loading or loaded');
       return;
     }
+    
+    setIsProfileLoading(true);
+    const profileStartTime = performance.now();
+    console.log('👤 [PERF] Profile loading started');
     
     // Set user immediately with metadata
     const userData: User = {
@@ -159,6 +189,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Fetch profile with retry logic
     try {
+      const fetchStartTime = performance.now();
       const fetchWithRetry = async (attempt = 1): Promise<any> => {
         const fetchPromise = supabase
           .from('profiles')
@@ -167,15 +198,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .maybeSingle();
         
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Profile fetch timeout')), 10000)
+          setTimeout(() => reject(new Error('Profile fetch timeout')), 1500) // Reduced from 3s
         );
         
         try {
           const result = await Promise.race([fetchPromise, timeoutPromise]) as any;
           return result;
         } catch (error: any) {
-          if (attempt < 3) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
+          console.log(`👤 [PERF] Profile fetch attempt ${attempt} failed:`, error.message);
+          if (attempt < 2) { // Reduced from 3 to 2 attempts
+            await new Promise(resolve => setTimeout(resolve, 500)); // Reduced retry delay
             return fetchWithRetry(attempt + 1);
           }
           throw error;
@@ -183,9 +215,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       
       const result = await fetchWithRetry();
+      const fetchEndTime = performance.now();
+      console.log(`👤 [PERF] Profile fetch completed in ${(fetchEndTime - fetchStartTime).toFixed(2)}ms`);
+      
       const { data, error } = result;
       
       if (error) {
+        console.log(`👤 [PERF] Profile fetch database error:`, error.message);
         return;
       }
       
@@ -194,9 +230,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile({ skin_goal: data.skin_goal ?? null, skin_type: data.skin_type ?? null });
       }
     } catch (error: any) {
+      console.log(`👤 [PERF] Profile loading failed:`, error.message);
       // Continue without profile - user can still access dashboard
     } finally {
+      const profileEndTime = performance.now();
+      console.log(`👤 [PERF] Total profile loading took ${(profileEndTime - profileStartTime).toFixed(2)}ms`);
       setIsInitialized(true);
+      setIsProfileLoading(false);
     }
   };
 

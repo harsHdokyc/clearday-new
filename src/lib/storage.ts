@@ -1,5 +1,56 @@
 import { supabase } from './supabase';
 
+// Type definitions for database operations
+type CheckInRow = {
+  id?: string;
+  user_id: string;
+  check_in_date: string;
+  photo_front_url?: string | null;
+  photo_right_url?: string | null;
+  photo_left_url?: string | null;
+  notes?: string | null;
+  routine_completed?: boolean;
+  ai_insight?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type ProfileRow = {
+  id: string;
+  email?: string;
+  name?: string;
+  skin_goal?: string | null;
+  skin_type?: string | null;
+  routine_steps?: string[];
+  baseline_date?: string | null;
+  last_reset_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type ProductEvaluationRow = {
+  id?: string;
+  user_id: string;
+  product_name: string;
+  fit_score: number;
+  verdict: string;
+  insight_message?: string | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type NotificationRow = {
+  id?: string;
+  user_id: string;
+  title: string;
+  message: string;
+  type: 'reminder' | 'achievement' | 'progress' | 'system';
+  read: boolean;
+  metadata?: Record<string, any>;
+  created_at?: string;
+  updated_at?: string;
+};
+
 const BUCKET_NAME = 'check-in-photos';
 
 /**
@@ -64,9 +115,12 @@ export const saveCheckIn = async (
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await supabase.from('check_ins').upsert(row, {
-      onConflict: 'user_id,check_in_date',
-    });
+    const supabaseAny = supabase as any;
+    const { error } = await supabaseAny
+      .from('check_ins')
+      .upsert(row, {
+        onConflict: 'user_id,check_in_date',
+      });
     if (error) throw error;
   } catch (error) {
     console.error('Error saving check-in:', error);
@@ -80,15 +134,18 @@ export const saveCheckIn = async (
 export const updateCheckInRoutine = async (userId: string, completed: boolean): Promise<void> => {
   try {
     const checkInDate = new Date().toISOString().split('T')[0];
-    const { error } = await supabase.from('check_ins').upsert(
-      {
-        user_id: userId,
-        check_in_date: checkInDate,
-        routine_completed: completed,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id,check_in_date' }
-    );
+    const supabaseAny = supabase as any;
+    const { error } = await supabaseAny
+      .from('check_ins')
+      .upsert(
+        {
+          user_id: userId,
+          check_in_date: checkInDate,
+          routine_completed: completed,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,check_in_date' }
+      );
     if (error) throw error;
   } catch (error) {
     console.error('Error updating routine:', error);
@@ -116,7 +173,7 @@ export const getTodayRoutineCompletion = async (userId: string) => {
     }
 
     return { 
-      completed: !!data?.routine_completed
+      completed: !!(data as any && (data as any).routine_completed)
     };
   } catch (error) {
     console.error('Error fetching routine completion:', error);
@@ -145,10 +202,10 @@ export const getPreviousDayCheckIn = async (userId: string) => {
       return null;
     }
 
-    return data ? {
-      front: data.photo_front_url || undefined,
-      right: data.photo_right_url || undefined,
-      left: data.photo_left_url || undefined,
+    return (data as any) ? {
+      front: (data as any).photo_front_url || undefined,
+      right: (data as any).photo_right_url || undefined,
+      left: (data as any).photo_left_url || undefined,
     } : null;
   } catch (error) {
     console.error('Error fetching previous day check-in:', error);
@@ -159,40 +216,56 @@ export const getPreviousDayCheckIn = async (userId: string) => {
 /**
  * Get photos from the past 3 days for comparison
  * Returns the most recent day with photos within the last 3 days
+ * Optimized to use single query instead of multiple queries in loop
  */
 export const getRecentDayPhotos = async (userId: string): Promise<{ front?: string; right?: string; left?: string } | null> => {
+  const queryStartTime = performance.now();
+  console.log('📸 [PERF] Recent photos query started');
+  
   try {
     const today = new Date();
-    const photos = [];
+    const threeDaysAgo = new Date(today);
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    const threeDaysAgoStr = threeDaysAgo.toISOString().split('T')[0];
     
-    // Check the past 3 days (excluding today)
-    for (let daysAgo = 1; daysAgo <= 3; daysAgo++) {
-      const checkDate = new Date(today);
-      checkDate.setDate(checkDate.getDate() - daysAgo);
-      const dateStr = checkDate.toISOString().split('T')[0];
-      
-      const { data, error } = await supabase
-        .from('check_ins')
-        .select('photo_front_url, photo_right_url, photo_left_url')
-        .eq('user_id', userId)
-        .eq('check_in_date', dateStr)
-        .maybeSingle();
+    // Single query to get all check-ins from past 3 days
+    const { data, error } = await supabase
+      .from('check_ins')
+      .select('check_in_date, photo_front_url, photo_right_url, photo_left_url')
+      .eq('user_id', userId)
+      .gte('check_in_date', threeDaysAgoStr)
+      .order('check_in_date', { ascending: false })
+      .limit(3);
 
-      if (error) {
-        console.error(`Error fetching check-in for ${dateStr}:`, error);
-        continue;
-      }
+    const queryEndTime = performance.now();
+    console.log(`📸 [PERF] Recent photos query completed in ${(queryEndTime - queryStartTime).toFixed(2)}ms`);
 
-      if (data && (data.photo_front_url || data.photo_right_url || data.photo_left_url)) {
-        return {
-          front: data.photo_front_url || undefined,
-          right: data.photo_right_url || undefined,
-          left: data.photo_left_url || undefined,
-        };
-      }
+    if (error) {
+      console.error('Error fetching recent check-ins:', error);
+      return null;
     }
 
-    return null;
+    // Find the most recent day with photos (excluding today)
+    const todayStr = today.toISOString().split('T')[0];
+    const recentWithPhotos = (data as any || []).find((checkIn: any) => 
+      checkIn.check_in_date !== todayStr && 
+      (checkIn.photo_front_url || checkIn.photo_right_url || checkIn.photo_left_url)
+    );
+
+    if (!recentWithPhotos) {
+      return null;
+    }
+
+    const result = {
+      front: recentWithPhotos.photo_front_url || undefined,
+      right: recentWithPhotos.photo_right_url || undefined,
+      left: recentWithPhotos.photo_left_url || undefined,
+    };
+    
+    const totalEndTime = performance.now();
+    console.log(`📸 [PERF] Total getRecentDayPhotos took ${(totalEndTime - queryStartTime).toFixed(2)}ms`);
+    
+    return result;
   } catch (error) {
     console.error('Error fetching recent day photos:', error);
     return null;
@@ -216,7 +289,7 @@ export const getProgressHistory = async (userId: string): Promise<Array<{ date: 
       return [];
     }
 
-    return (data || []).map(checkIn => ({
+    return ((data as any) || []).map((checkIn: any) => ({
       date: checkIn.check_in_date,
       hasData: !!(checkIn.photo_front_url || checkIn.photo_right_url || checkIn.photo_left_url),
       value: checkIn.photo_front_url ? 50 + Math.random() * 30 : undefined // Placeholder value based on photo availability
@@ -281,7 +354,8 @@ export const saveProductEvaluation = async (
   userId: string,
   p: { productName: string; fitScore: number; verdict: string; insightMessage?: string }
 ): Promise<void> => {
-  const { error } = await supabase.from('product_evaluations').insert({
+  const supabaseAny = supabase as any;
+  const { error } = await supabaseAny.from('product_evaluations').insert({
     user_id: userId,
     product_name: p.productName,
     fit_score: p.fitScore,
@@ -305,39 +379,67 @@ export const getUserProductEvaluations = async (userId: string, limit = 10) => {
 
 /** Get user's saved routine steps (from profiles) */
 export const getProfileRoutine = async (userId: string): Promise<string[]> => {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('routine_steps')
-    .eq('id', userId)
-    .maybeSingle();
-  
-  if (error || !data?.routine_steps) return [];
-  const arr = data.routine_steps as unknown;
-  return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : [];
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('routine_steps')
+      .eq('id', userId)
+      .maybeSingle();
+    
+    if (error) return [];
+    
+    // Type assertion to handle routine_steps safely
+    const profile = data as any;
+    if (!profile?.routine_steps) return [];
+    
+    const routineSteps = profile.routine_steps;
+    if (!Array.isArray(routineSteps)) return [];
+    
+    return routineSteps.filter((x: unknown): x is string => typeof x === 'string');
+  } catch (error) {
+    console.error('Error fetching profile routine:', error);
+    return [];
+  }
 };
 
 /** Save user's routine steps to profiles */
 export const saveProfileRoutine = async (userId: string, steps: string[]): Promise<void> => {
-  const { data: existingProfile } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('id', userId)
-    .maybeSingle();
-    
-  if (existingProfile) {
-    await supabase
+  try {
+    const { data: existingProfile } = await supabase
       .from('profiles')
-      .update({ routine_steps: steps, updated_at: new Date().toISOString() })
-      .eq('id', userId);
-  } else {
-    await supabase
-      .from('profiles')
-      .insert({ 
-        id: userId, 
-        routine_steps: steps, 
-        updated_at: new Date().toISOString(),
-        created_at: new Date().toISOString()
-      });
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+      
+    if (existingProfile) {
+      // Update existing profile using dynamic approach
+      const supabaseAny = supabase as any;
+      const { error } = await supabaseAny
+        .from('profiles')
+        .update({ 
+          routine_steps: steps, 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', userId);
+      
+      if (error) throw error;
+    } else {
+      // Insert new profile using dynamic approach
+      const supabaseAny = supabase as any;
+      const { error } = await supabaseAny
+        .from('profiles')
+        .insert({ 
+          id: userId, 
+          routine_steps: steps, 
+          updated_at: new Date().toISOString(),
+          created_at: new Date().toISOString()
+        });
+      
+      if (error) throw error;
+    }
+  } catch (error) {
+    console.error('Error saving profile routine:', error);
+    throw new Error('Failed to save routine');
   }
 };
 
@@ -361,7 +463,8 @@ export const createNotification = async (
   type: 'reminder' | 'achievement' | 'progress' | 'system',
   metadata?: Record<string, any>
 ): Promise<Notification> => {
-  const { data, error } = await supabase
+  const supabaseAny = supabase as any;
+  const { data, error } = await supabaseAny
     .from('notifications')
     .insert({
       user_id: userId,
@@ -389,7 +492,8 @@ export const getNotifications = async (userId: string): Promise<Notification[]> 
 };
 
 export const markNotificationAsRead = async (notificationId: string): Promise<void> => {
-  const { error } = await supabase
+  const supabaseAny = supabase as any;
+  const { error } = await supabaseAny
     .from('notifications')
     .update({ read: true, updated_at: new Date().toISOString() })
     .eq('id', notificationId);
@@ -398,7 +502,8 @@ export const markNotificationAsRead = async (notificationId: string): Promise<vo
 };
 
 export const markAllNotificationsAsRead = async (userId: string): Promise<void> => {
-  const { error } = await supabase
+  const supabaseAny = supabase as any;
+  const { error } = await supabaseAny
     .from('notifications')
     .update({ read: true, updated_at: new Date().toISOString() })
     .eq('user_id', userId)

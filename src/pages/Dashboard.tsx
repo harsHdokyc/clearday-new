@@ -71,37 +71,96 @@ export default function Dashboard() {
   // Check-in, streak, and routine
   useEffect(() => {
     if (!user?.id) return;
+    const dashboardLoadStartTime = performance.now();
+    console.log('📊 [PERF] Dashboard data loading started');
+    
     const run = async () => {
-      const [checkIn, streak, routine, todayCompletion, history] = await Promise.all([
-        getTodayCheckIn(user.id),
-        getStreakData(user.id),
-        getProfileRoutine(user.id),
-        getTodayRoutineCompletion(user.id),
-        getProgressHistory(user.id),
-      ]);
+      const apiCallsStartTime = performance.now();
       
-      if (checkIn) {
-        setHasCheckedInToday(true);
-        setExistingPhotos({
-          front: (checkIn as { photo_front_url?: string }).photo_front_url || undefined,
-          right: (checkIn as { photo_right_url?: string }).photo_right_url || undefined,
-          left: (checkIn as { photo_left_url?: string }).photo_left_url || undefined,
+      // Create timeout promises for each API call
+      const createTimeoutPromise = (ms: number, name: string) => 
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error(`${name} timeout`)), ms)
+        );
+      
+      try {
+        // Add individual timeouts to prevent slow calls from blocking everything
+        const [
+          checkIn,
+          streak,
+          routine,
+          todayCompletion,
+          history
+        ] = await Promise.all([
+          Promise.race([
+            getTodayCheckIn(user.id),
+            createTimeoutPromise(3000, 'getTodayCheckIn')
+          ]).catch(err => {
+            console.log('📊 [PERF] getTodayCheckIn failed:', err.message);
+            return null;
+          }),
+          Promise.race([
+            getStreakData(user.id),
+            createTimeoutPromise(5000, 'getStreakData')
+          ]).catch(err => {
+            console.log('📊 [PERF] getStreakData failed:', err.message);
+            return { currentStreak: 0, longestStreak: 0, totalDays: 0, daysTracked: 0, daysMissed: 0, shouldReset: false, resetApplied: false };
+          }),
+          Promise.race([
+            getProfileRoutine(user.id),
+            createTimeoutPromise(3000, 'getProfileRoutine')
+          ]).catch(err => {
+            console.log('📊 [PERF] getProfileRoutine failed:', err.message);
+            return [];
+          }),
+          Promise.race([
+            getTodayRoutineCompletion(user.id),
+            createTimeoutPromise(2000, 'getTodayRoutineCompletion')
+          ]).catch(err => {
+            console.log('📊 [PERF] getTodayRoutineCompletion failed:', err.message);
+            return { completed: false };
+          }),
+          Promise.race([
+            getProgressHistory(user.id),
+            createTimeoutPromise(3000, 'getProgressHistory')
+          ]).catch(err => {
+            console.log('📊 [PERF] getProgressHistory failed:', err.message);
+            return [];
+          }),
+        ]);
+        
+        const apiCallsEndTime = performance.now();
+        console.log(`📊 [PERF] Dashboard API calls completed in ${(apiCallsEndTime - apiCallsStartTime).toFixed(2)}ms`);
+        
+        if (checkIn) {
+          setHasCheckedInToday(true);
+          setExistingPhotos({
+            front: (checkIn as any).photo_front_url || undefined,
+            right: (checkIn as any).photo_right_url || undefined,
+            left: (checkIn as any).photo_left_url || undefined,
+          });
+          setRoutineCompleted(!!(checkIn as any).routine_completed);
+        }
+        setTodayRoutineCompleted((todayCompletion as any).completed);
+        setProgressHistory(history as any);
+        setUserData({
+          currentStreak: (streak as any).currentStreak,
+          longestStreak: (streak as any).longestStreak,
+          totalDays: (streak as any).totalDays,
+          daysTracked: (streak as any).daysTracked,
+          daysMissed: (streak as any).daysMissed,
         });
-        setRoutineCompleted(!!(checkIn as { routine_completed?: boolean }).routine_completed);
+        setSavedRoutineSteps(routine as any);
+        if ((streak as any).shouldReset && !(streak as any).resetApplied) {
+          await applyReset(user.id);
+        }
+        
+      } catch (error) {
+        console.error('📊 [PERF] Dashboard API calls error:', error);
       }
-      setTodayRoutineCompleted(todayCompletion.completed);
-      setProgressHistory(history);
-      setUserData({
-        currentStreak: streak.currentStreak,
-        longestStreak: streak.longestStreak,
-        totalDays: streak.totalDays,
-        daysTracked: streak.daysTracked,
-        daysMissed: streak.daysMissed,
-      });
-      setSavedRoutineSteps(routine);
-      if (streak.shouldReset && !streak.resetApplied) {
-        await applyReset(user.id);
-      }
+      
+      const dashboardLoadEndTime = performance.now();
+      console.log(`📊 [PERF] Total dashboard data loading took ${(dashboardLoadEndTime - dashboardLoadStartTime).toFixed(2)}ms`);
       
     };
     run();

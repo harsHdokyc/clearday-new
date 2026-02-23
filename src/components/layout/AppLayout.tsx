@@ -14,6 +14,7 @@ import { Sidebar } from "./Sidebar";
 import { motion } from "framer-motion";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/contexts/AuthContext";
+import { useState } from "react";
 
 /**
  * Main Application Layout Component
@@ -32,6 +33,13 @@ import { useAuth } from "@/contexts/AuthContext";
 export function AppLayout(): JSX.Element {
   const isMobile = useIsMobile();
   const { isAuthenticated, isLoading, profile } = useAuth();
+  
+  // Track page load performance
+  const [loadStartTime] = useState(() => {
+    const startTime = performance.now();
+    console.log('🚀 [PERF] AppLayout component started rendering');
+    return startTime;
+  });
 
   // Show loading state during authentication check
   if (isLoading) {
@@ -44,6 +52,8 @@ export function AppLayout(): JSX.Element {
 
   // Redirect to login if not authenticated
   if (!isAuthenticated) {
+    const authRedirectTime = performance.now();
+    console.log(`🚀 [PERF] Auth redirect took ${(authRedirectTime - loadStartTime).toFixed(2)}ms`);
     return <Navigate to="/login" replace />;
   }
 
@@ -60,8 +70,14 @@ export function AppLayout(): JSX.Element {
   const shouldRedirectToOnboarding = profile && profile.skin_goal === null && profile.skin_type === null;
 
   if (shouldRedirectToOnboarding) {
+    const onboardingRedirectTime = performance.now();
+    console.log(`🚀 [PERF] Onboarding redirect took ${(onboardingRedirectTime - loadStartTime).toFixed(2)}ms`);
     return <Navigate to="/onboarding" replace />;
   }
+
+  // Log when main layout starts rendering
+  const layoutRenderTime = performance.now();
+  console.log(`🚀 [PERF] Main layout rendering started after ${(layoutRenderTime - loadStartTime).toFixed(2)}ms`);
 
   // Main layout structure with sidebar and content area
   return (
