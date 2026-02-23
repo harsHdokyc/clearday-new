@@ -71,12 +71,8 @@ export default function Dashboard() {
   // Check-in, streak, and routine
   useEffect(() => {
     if (!user?.id) return;
-    const dashboardLoadStartTime = performance.now();
-    console.log('📊 [PERF] Dashboard data loading started');
     
     const run = async () => {
-      const apiCallsStartTime = performance.now();
-      
       // Create timeout promises for each API call
       const createTimeoutPromise = (ms: number, name: string) => 
         new Promise((_, reject) => 
@@ -96,41 +92,33 @@ export default function Dashboard() {
             getTodayCheckIn(user.id),
             createTimeoutPromise(3000, 'getTodayCheckIn')
           ]).catch(err => {
-            console.log('📊 [PERF] getTodayCheckIn failed:', err.message);
             return null;
           }),
           Promise.race([
             getStreakData(user.id),
             createTimeoutPromise(5000, 'getStreakData')
           ]).catch(err => {
-            console.log('📊 [PERF] getStreakData failed:', err.message);
             return { currentStreak: 0, longestStreak: 0, totalDays: 0, daysTracked: 0, daysMissed: 0, shouldReset: false, resetApplied: false };
           }),
           Promise.race([
             getProfileRoutine(user.id),
             createTimeoutPromise(3000, 'getProfileRoutine')
           ]).catch(err => {
-            console.log('📊 [PERF] getProfileRoutine failed:', err.message);
             return [];
           }),
           Promise.race([
             getTodayRoutineCompletion(user.id),
             createTimeoutPromise(2000, 'getTodayRoutineCompletion')
           ]).catch(err => {
-            console.log('📊 [PERF] getTodayRoutineCompletion failed:', err.message);
             return { completed: false };
           }),
           Promise.race([
             getProgressHistory(user.id),
             createTimeoutPromise(3000, 'getProgressHistory')
           ]).catch(err => {
-            console.log('📊 [PERF] getProgressHistory failed:', err.message);
             return [];
           }),
         ]);
-        
-        const apiCallsEndTime = performance.now();
-        console.log(`📊 [PERF] Dashboard API calls completed in ${(apiCallsEndTime - apiCallsStartTime).toFixed(2)}ms`);
         
         if (checkIn) {
           setHasCheckedInToday(true);
@@ -156,11 +144,8 @@ export default function Dashboard() {
         }
         
       } catch (error) {
-        console.error('📊 [PERF] Dashboard API calls error:', error);
+        console.error('Dashboard API calls error:', error);
       }
-      
-      const dashboardLoadEndTime = performance.now();
-      console.log(`📊 [PERF] Total dashboard data loading took ${(dashboardLoadEndTime - dashboardLoadStartTime).toFixed(2)}ms`);
       
     };
     run();

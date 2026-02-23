@@ -219,9 +219,6 @@ export const getPreviousDayCheckIn = async (userId: string) => {
  * Optimized to use single query instead of multiple queries in loop
  */
 export const getRecentDayPhotos = async (userId: string): Promise<{ front?: string; right?: string; left?: string } | null> => {
-  const queryStartTime = performance.now();
-  console.log('📸 [PERF] Recent photos query started');
-  
   try {
     const today = new Date();
     const threeDaysAgo = new Date(today);
@@ -236,9 +233,6 @@ export const getRecentDayPhotos = async (userId: string): Promise<{ front?: stri
       .gte('check_in_date', threeDaysAgoStr)
       .order('check_in_date', { ascending: false })
       .limit(3);
-
-    const queryEndTime = performance.now();
-    console.log(`📸 [PERF] Recent photos query completed in ${(queryEndTime - queryStartTime).toFixed(2)}ms`);
 
     if (error) {
       console.error('Error fetching recent check-ins:', error);
@@ -256,16 +250,11 @@ export const getRecentDayPhotos = async (userId: string): Promise<{ front?: stri
       return null;
     }
 
-    const result = {
+    return {
       front: recentWithPhotos.photo_front_url || undefined,
       right: recentWithPhotos.photo_right_url || undefined,
       left: recentWithPhotos.photo_left_url || undefined,
     };
-    
-    const totalEndTime = performance.now();
-    console.log(`📸 [PERF] Total getRecentDayPhotos took ${(totalEndTime - queryStartTime).toFixed(2)}ms`);
-    
-    return result;
   } catch (error) {
     console.error('Error fetching recent day photos:', error);
     return null;
