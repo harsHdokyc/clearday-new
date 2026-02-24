@@ -56,6 +56,9 @@ export function AppLayout(): JSX.Element {
    * - Users with incomplete onboarding (missing both fields) are redirected to onboarding
    * - Users with failed profile fetch (profile = null) can access dashboard (existing users)
    * - Users with at least one field completed can access the app
+   * 
+   * Note: We allow dashboard access when profile is null because this could be a
+   * temporary fetch failure. Existing users shouldn't be blocked from dashboard.
    */
   const shouldRedirectToOnboarding = profile && profile.skin_goal === null && profile.skin_type === null;
 

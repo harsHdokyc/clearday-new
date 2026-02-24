@@ -77,9 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // Check if session has expired (30 days)
+        // Check if 30-day session has expired
         if (checkSessionExpiry()) {
-          console.log("Session expired, logging out...");
           await supabase.auth.signOut();
           clearSession();
           if (mounted) {
@@ -90,40 +89,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        // Reduce session timeout and implement better fallback
-        const sessionPromise = supabase.auth.getSession();
-        const sessionTimeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Session retrieval timeout')), 2000)
-        );
+        // Get current session
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        try {
-          const { data: { session }, error } = await Promise.race([sessionPromise, sessionTimeoutPromise]) as any;
-          
-          if (!mounted) return;
-          
-          if (error) {
-            if (mounted) {
-              setIsLoading(false);
-            }
-            return;
-          }
-          
-          if (session?.user) {
-            // Set session start time if not exists
-            if (!localStorage.getItem(SESSION_KEY)) {
-              setSessionStart();
-            }
-            // Set user immediately, fetch profile in background
-            setUserFromSession(session.user).catch(err => {
-              console.error("Error setting user from session:", err);
-            });
-          }
-        } catch (sessionError: any) {
-          // Continue without session - user will need to login
+        if (!mounted) return;
+        
+        if (error) {
           if (mounted) {
             setIsLoading(false);
           }
           return;
+        }
+        
+        if (session?.user) {
+          // Set session start time if not exists
+          if (!localStorage.getItem('clearday-session-start')) {
+            setSessionStart();
+          }
+          
+          setUserFromSession(session.user).catch(err => {
+            console.error("Error setting user from session:", err);
+          });
+        } else {
+          // No session found
+          if (mounted) {
+            setIsLoading(false);
+          }
         }
       } catch (error: any) {
         console.error("Error checking session:", error);
@@ -141,12 +132,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
       
-      setIsLoading(false); // Set loading false immediately when auth state changes
+      setIsLoading(false);
+      
       if (session?.user) {
+        // Initialize session tracking if this is a recovered session
+        if (!localStorage.getItem('clearday-session-start')) {
+          setSessionStart();
+        }
+        
         await setUserFromSession(session.user);
       } else {
         setUser(null);
         setProfile(null);
+        setIsInitialized(false);
+        
+        // Clear session data on sign out
+        if (event === 'SIGNED_OUT') {
+          clearSession();
+        }
       }
     });
 
@@ -235,10 +238,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: error.message };
       }
 
-      if (data?.user) {
-        // Set 30-day session start time
+      if (data?.user && data?.session) {
         setSessionStart();
-        // Don't await setUserFromSession - let it run in background
         setUserFromSession(data.user).catch(err => {
           console.error("Error setting user from session:", err);
         });
@@ -248,6 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: "Login failed - no user data returned" };
     } catch (error: any) {
       const errorMessage = error?.message || "An error occurred during login";
+      console.error('Login error:', errorMessage);
       return { success: false, error: errorMessage };
     }
   };
@@ -375,10 +377,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setProfile(null);
       setIsInitialized(false);
-      // Clear 30-day session tracker
+      setIsProfileLoading(false);
       clearSession();
     } catch (error) {
-      // Handle error silently
+      // Still clear local state even if Supabase logout fails
+      setUser(null);
+      setProfile(null);
+      setIsInitialized(false);
+      setIsProfileLoading(false);
+      clearSession();
     }
   };
 

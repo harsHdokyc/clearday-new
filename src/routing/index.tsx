@@ -10,7 +10,7 @@
  * @since 1.0.0
  */
 
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 
 // Page component imports
@@ -42,21 +42,14 @@ export const AppRoutes = (): JSX.Element => {
   return (
     <Routes>
       {/* 
-        Public Routes
-        These routes are accessible without authentication
-      */}
-      <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<SignUp />} />
-      <Route path="/verify-email" element={<EmailVerification />} />
-      <Route path="/onboarding" element={<Onboarding />} />
-      
-      {/* 
-        Protected Routes
-        These routes require authentication and use the AppLayout wrapper
+        Protected Routes First
+        These routes require authentication and use AppLayout wrapper
         The AppLayout component handles authentication checks and redirects
+        Placing first ensures authenticated users hit protected routes first
       */}
       <Route element={<AppLayout />}>
+        {/* Root route for authenticated users - redirect to dashboard */}
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/history" element={<History />} />
         <Route path="/products" element={<Products />} />
@@ -65,8 +58,19 @@ export const AppRoutes = (): JSX.Element => {
       </Route>
       
       {/* 
+        Public Routes
+        These routes are accessible without authentication
+        Placed after protected routes so authenticated users don't accidentally hit them
+      */}
+      <Route path="/" element={<Landing />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<SignUp />} />
+      <Route path="/verify-email" element={<EmailVerification />} />
+      <Route path="/onboarding" element={<Onboarding />} />
+      
+      {/* 
         Fallback Route
-        Catches all unmatched routes and displays the 404 page
+        Catches all unmatched routes and displays 404 page
       */}
       <Route path="*" element={<NotFound />} />
     </Routes>
