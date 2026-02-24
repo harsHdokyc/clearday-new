@@ -26,6 +26,7 @@ export default function History() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [analyzingInsight, setAnalyzingInsight] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -71,6 +72,7 @@ export default function History() {
     if (!user?.id || !entry.photoFrontUrl || analyzingInsight) return;
 
     setAnalyzingInsight(true);
+    setAnalysisError(null);
     
     try {
       // Get previous day's photos for comparison
@@ -102,11 +104,15 @@ export default function History() {
       
       // Save the insight to database
       const dateStr = format(entry.date, 'yyyy-MM-dd');
-      await supabase
+      const { error } = await supabase
         .from('check_ins')
         .update({ ai_insight: analysis.insight })
         .eq('user_id', user.id)
         .eq('check_in_date', dateStr);
+        
+      if (error) {
+        throw new Error(`Failed to save AI insight: ${error.message}`);
+      }
 
       // Update local state
       setHistoryData(prev => prev.map(h => 
@@ -116,7 +122,9 @@ export default function History() {
       ));
       
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate AI insight';
       console.error('Error generating AI insight:', error);
+      setAnalysisError(errorMessage);
     } finally {
       setAnalyzingInsight(false);
     }
@@ -358,9 +366,17 @@ export default function History() {
                         <Sparkles size={14} className="text-muted-foreground" />
                         <span className="text-xs font-medium text-muted-foreground uppercase">AI Analysis</span>
                       </div>
-                      <p className="text-sm text-muted-foreground mb-3">
-                        Get personalized skin analysis for this photo
-                      </p>
+                      
+                      {analysisError ? (
+                        <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3 mb-3">
+                          <p className="text-sm text-destructive">{analysisError}</p>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground mb-3">
+                          Get personalized skin analysis for this photo
+                        </p>
+                      )}
+                      
                       <Button
                         onClick={() => generateAIInsight(selectedEntry)}
                         disabled={analyzingInsight}

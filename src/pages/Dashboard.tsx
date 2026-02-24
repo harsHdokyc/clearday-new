@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import heroImage from "@/assets/hero-skincare.jpg";
 
 export default function Dashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
@@ -70,7 +70,8 @@ export default function Dashboard() {
 
   // Check-in, streak, and routine
   useEffect(() => {
-    if (!user?.id) return;
+    // Simple check: if user exists and has ID, load data
+    if (!user || !user.id) return;
     
     const run = async () => {
       // Create timeout promises for each API call
@@ -149,7 +150,7 @@ export default function Dashboard() {
       
     };
     run();
-  }, [user?.id]);
+  }, [user]);
 
   // Analyze progress when photos are updated
   useEffect(() => {

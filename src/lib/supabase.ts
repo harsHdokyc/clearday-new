@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { Database } from '../types/supabase';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? '';
@@ -8,14 +9,14 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 // Singleton instance to prevent multiple clients
-let supabaseInstance: ReturnType<typeof createClient> | null = null;
+let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null;
 
 export const supabase = (() => {
   if (supabaseInstance) {
     return supabaseInstance;
   }
   
-  supabaseInstance = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'dummy', {
+  supabaseInstance = createClient<Database>(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'dummy', {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
