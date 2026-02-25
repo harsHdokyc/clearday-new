@@ -36,7 +36,9 @@ export function Sidebar() {
 
   useEffect(() => {
     if (!user?.id) return;
-    getStreakData(user.id).then((d) => setCurrentStreak(d.currentStreak));
+    getStreakData(user.id)
+      .then((d) => setCurrentStreak(d.currentStreak))
+      .catch(() => setCurrentStreak(0));
   }, [user?.id, location.pathname]);
 
   const handleLogout = () => {

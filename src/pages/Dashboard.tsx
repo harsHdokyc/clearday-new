@@ -98,7 +98,7 @@ export default function Dashboard() {
           Promise.race([
             getStreakData(user.id),
             createTimeoutPromise(5000, 'getStreakData')
-          ]).catch(err => {
+          ]).catch(() => {
             return { currentStreak: 0, longestStreak: 0, totalDays: 0, daysTracked: 0, daysMissed: 0, shouldReset: false, resetApplied: false };
           }),
           Promise.race([

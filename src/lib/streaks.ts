@@ -97,7 +97,8 @@ async function getCheckInDates(userId: string): Promise<string[]> {
   
   const uniqueDates = new Set<string>();
   (data || []).forEach((r: { check_in_date: string }) => {
-    uniqueDates.add(String(r.check_in_date).slice(0, 10));
+    const dateStr = String(r.check_in_date).slice(0, 10);
+    uniqueDates.add(dateStr);
   });
   
   return Array.from(uniqueDates).sort();
@@ -154,23 +155,30 @@ export async function getStreakData(userId: string): Promise<StreakData> {
   const lastCheckIn = lastDate ? new Date(lastDate).getTime() : 0;
   const resetApplied = shouldReset && lastReset >= lastCheckIn;
 
-  // Calculate current streak
+  // Calculate current streak (most recent consecutive streak)
   let currentStreak = 0;
-  if (hasToday) {
+  if (dates.length > 0) {
+    // Start from the most recent date and count backwards
+    let currentDate = new Date(dates[dates.length - 1]);
     currentStreak = 1;
-    let d = subDays(today, 1);
-    while (d.getTime() >= (dates[0] ? new Date(dates[0]).getTime() : 0)) {
-      const s = format(d, 'yyyy-MM-dd');
-      if (dates.includes(s)) {
+    
+    // Count consecutive days going backwards from the most recent check-in
+    for (let i = dates.length - 2; i >= 0; i--) {
+      const prevDate = new Date(dates[i]);
+      const diffDays = differenceInDays(currentDate, prevDate);
+      
+      if (diffDays === 1) {
         currentStreak++;
-        d = subDays(d, 1);
-      } else break;
+        currentDate = prevDate;
+      } else {
+        break; // Break in streak
+      }
     }
   }
 
   const longestStreak = longestConsecutive(dates);
 
-  return {
+  const result = {
     currentStreak,
     longestStreak,
     totalDays,
@@ -179,6 +187,8 @@ export async function getStreakData(userId: string): Promise<StreakData> {
     shouldReset,
     resetApplied,
   };
+  
+  return result;
 }
 
 /** Apply reset: clear all user data when 4+ days missed */
