@@ -42,31 +42,29 @@ export const AppRoutes = (): JSX.Element => {
   return (
     <Routes>
       {/* 
-        Protected Routes First
-        These routes require authentication and use AppLayout wrapper
-        The AppLayout component handles authentication checks and redirects
-        Placing first ensures authenticated users hit protected routes first
-      */}
-      <Route element={<AppLayout />}>
-        {/* Root route for authenticated users - redirect to dashboard */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/history" element={<History />} />
-        <Route path="/products" element={<Products />} />
-        <Route path="/journey" element={<Journey />} />
-        <Route path="/settings" element={<Settings />} />
-      </Route>
-      
-      {/* 
-        Public Routes
+        Public Routes First
         These routes are accessible without authentication
-        Placed after protected routes so authenticated users don't accidentally hit them
+        Placed first to ensure unauthenticated users can access landing page
       */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<SignUp />} />
       <Route path="/verify-email" element={<EmailVerification />} />
       <Route path="/onboarding" element={<Onboarding />} />
+      
+      {/* 
+        Protected Routes
+        These routes require authentication and use AppLayout wrapper
+        The AppLayout component handles authentication checks and redirects
+        Placed after public routes to allow unauthenticated access to landing page
+      */}
+      <Route element={<AppLayout />}>
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/products" element={<Products />} />
+        <Route path="/journey" element={<Journey />} />
+        <Route path="/settings" element={<Settings />} />
+      </Route>
       
       {/* 
         Fallback Route
